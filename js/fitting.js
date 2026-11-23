@@ -113,7 +113,7 @@
       <h3>🔑 ${t("frKeyTitle")}</h3>
       <p class="muted">${t("frKeyText")}</p>
       <a class="link-arrow" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">${t("frKeyGet")} ${S.icons.arrowUp}</a>
-      <input class="field" id="frKeyInput" type="password" placeholder="AIza..." value="${key}">
+      <input class="field" id="frKeyInput" type="password" placeholder="Paste your API key" value="${key}">
       <div class="fr-actions">
         ${key ? `<button class="link-btn" data-fr="delkey">${t("frRemove")}</button>` : "<span></span>"}
         <div><button class="btn ghost" data-fr="cancel">${t("frCancel")}</button> <button class="btn" data-fr="savekey">${t("frSave")}</button></div>
