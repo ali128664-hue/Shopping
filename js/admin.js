@@ -42,7 +42,7 @@
   }
 
   function shell(content) {
-    const nav = [["dashboard", "Dashboard"], ["orders", "Orders"], ["products", "Products"], ["countries", "Countries & Shipping"], ["seo", "SEO"], ["messages", "Messages"]];
+    const nav = [["dashboard", "Dashboard"], ["orders", "Orders"], ["products", "Products"], ["countries", "Countries & Shipping"], ["coupons", "Coupons"], ["reviews", "Reviews"], ["seo", "SEO"], ["settings", "Settings"], ["messages", "Messages"]];
     root.innerHTML = `
       <aside class="side">
         <a class="logo" href="/">STORE</a>
@@ -76,6 +76,7 @@
           ${s.topProducts.length ? `<ol class="toplist">${s.topProducts.map((p) => `<li><span>${esc(p.name)}</span><b>${p.qty} sold</b></li>`).join("")}</ol>` : `<p class="muted">No sales yet.</p>`}
           <h3 style="margin-top:22px">Low stock</h3>
           ${s.lowStock.length ? `<ul class="toplist">${s.lowStock.map((p) => `<li><span>${esc(p.name)}</span><b class="${p.stock ? "warn" : "danger"}">${p.stock} left</b></li>`).join("")}</ul>` : `<p class="muted">All products are well stocked.</p>`}
+          ${s.pendingReviews ? `<p style="margin-top:18px"><a class="more" href="#reviews">${s.pendingReviews} review(s) waiting for approval →</a></p>` : ""}
           ${s.unreadMessages ? `<p style="margin-top:18px"><a class="more" href="#messages">${s.unreadMessages} unread message(s) →</a></p>` : ""}
         </section>
       </div>`);
@@ -186,7 +187,6 @@
           </div>
           <div class="row3">
             <label class="fl"><span>Stock</span><input class="field" name="stock" type="number" min="0" step="1" value="${editing.stock}"></label>
-            <label class="fl"><span>Rating (0–5)</span><input class="field" name="rating" type="number" min="0" max="5" step="0.1" value="${editing.rating ?? 0}"></label>
             <div class="checks"><label><input type="checkbox" name="isNew" ${editing.isNew ? "checked" : ""}> “New” badge</label><label><input type="checkbox" name="active" ${editing.active ? "checked" : ""}> Visible in store</label></div>
           </div>
           <div class="lang-tabs" id="langTabs"></div>
@@ -247,7 +247,7 @@
     const f = $("#productForm"), v = (n) => f.querySelector(`[name="${n}"]`);
     const body = {
       cat: v("cat").value, img: v("img").value.trim() || editing.img, price: v("price").value, oldPrice: v("oldPrice").value,
-      stock: v("stock").value, rating: v("rating").value, isNew: v("isNew").checked, active: v("active").checked,
+      stock: v("stock").value, isNew: v("isNew").checked, active: v("active").checked,
       names: {}, descs: {}, seo: {}
     };
     LANGS.forEach((l) => { body.names[l.code] = editing.names[l.code] || ""; body.descs[l.code] = editing.descs[l.code] || ""; body.seo[l.code] = editing.seo[l.code] || { title: "", desc: "" }; });
@@ -339,6 +339,83 @@
     const t = $("#serpTitle"); if (t) { t.textContent = $('#seoForm [name="metaHomeTitle"]').value; $("#serpDesc").textContent = $('#seoForm [name="metaHomeDesc"]').value; }
   }
 
+  // ---------- coupons ----------
+  async function couponsView() {
+    const list = await api("/api/admin/coupons");
+    const row = (c, isNew) => `
+      <tr data-coupon="${isNew ? "" : esc(c.code)}" class="${c.active || isNew ? "" : "dim"}">
+        <td>${isNew ? `<input class="field" name="code" placeholder="EID25" maxlength="30">` : `<b>${esc(c.code)}</b>`}</td>
+        <td><select class="field" name="type">${[["percent", "% off"], ["fixed", "$ off"], ["shipping", "Free shipping"]].map(([v, l]) => `<option value="${v}" ${c.type === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
+        <td><input class="field num" name="value" type="number" min="0" step="any" value="${c.value ?? ""}"></td>
+        <td><input class="field num" name="min" type="number" min="0" step="any" value="${c.min || ""}" placeholder="0"></td>
+        <td><input class="field" name="expires" type="date" value="${c.expires || ""}"></td>
+        <td><input class="field xs" name="maxUses" type="number" min="1" value="${c.maxUses ?? ""}" placeholder="∞"></td>
+        <td>${isNew ? "—" : `${c.uses || 0}`}</td>
+        <td>${isNew ? "" : `<label class="switch"><input type="checkbox" name="active" ${c.active ? "checked" : ""}><span></span></label>`}</td>
+        <td class="row-actions"><button class="btn sm" data-save-coupon>${isNew ? "Add" : "Save"}</button>${isNew ? "" : `<button class="link-btn danger" data-del-coupon="${esc(c.code)}">Delete</button>`}</td>
+      </tr>`;
+    shell(`
+      <h1>Coupons</h1>
+      <p class="muted">Discount codes customers type at checkout. “$ off” and the minimum order are in USD and converted to each country's currency. Leave expiry and max uses empty for no limit.</p>
+      <div class="panel table-wrap"><table class="countries">
+        <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Min order ($)</th><th>Expires</th><th>Max uses</th><th>Used</th><th>On</th><th></th></tr></thead>
+        <tbody>${list.map((c) => row(c)).join("")}${row({ type: "percent", active: true }, true)}</tbody>
+      </table></div>`);
+  }
+  async function saveCoupon(tr) {
+    const v = (n) => tr.querySelector(`[name="${n}"]`);
+    const code = tr.dataset.coupon || v("code").value.trim().toUpperCase();
+    const body = { type: v("type").value, value: v("value").value || 0, min: v("min").value, expires: v("expires").value, maxUses: v("maxUses").value };
+    if (v("active")) body.active = v("active").checked;
+    try { await api(`/api/admin/coupons/${encodeURIComponent(code)}`, { method: "PUT", body }); toast(`Saved · ${code}`); couponsView(); } catch (err) { toast(err.message); }
+  }
+
+  // ---------- reviews ----------
+  async function reviewsView() {
+    const list = await api("/api/admin/reviews");
+    const pending = list.filter((r) => r.status === "pending").length;
+    shell(`
+      <h1>Reviews</h1>
+      <p class="muted">Customer reviews appear on the product page after you approve them. Approved reviews also show star ratings in Google.${pending ? ` <b>${pending} waiting.</b>` : ""}</p>
+      <div class="panel">${list.length ? list.map((r) => `
+        <article class="msg ${r.status === "pending" ? "unread" : ""}">
+          <div class="a-head"><span class="rv-prod"><img class="thumb sm" src="${esc(r.img || "")}" alt=""> <b>${esc(r.product)}</b></span><small class="muted">${date(r.at)} · ${esc(r.lang)} · <span class="st st-${r.status}">${r.status}</span></small></div>
+          <div><b>${esc(r.name)}</b> <span class="stars-txt">${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</span></div>
+          <p>${esc(r.text)}</p>
+          <div class="row-actions">${r.status !== "approved" ? `<button class="btn sm" data-review="${r.id}" data-st="approved">Approve</button>` : `<button class="btn ghost sm" data-review="${r.id}" data-st="hidden">Hide</button>`}<button class="link-btn danger" data-del-review="${r.id}">Delete</button></div>
+        </article>`).join("") : `<p class="muted">No reviews yet.</p>`}</div>`);
+  }
+
+  // ---------- settings ----------
+  let annLang = "en";
+  async function settingsView() {
+    const { settings: st, languages, coupons } = await api("/api/admin/settings");
+    LANGS = languages;
+    shell(`
+      <h1>Settings</h1>
+      <form class="a-grid" id="settingsForm">
+        <section class="panel set-sec">
+          <h3>WhatsApp</h3>
+          <p class="muted">Shows a chat button, “Order on WhatsApp” on products and “Confirm on WhatsApp” after checkout. Leave empty to hide.</p>
+          <label class="fl"><span>WhatsApp number (with country code)</span><input class="field" name="whatsapp" value="${esc(st.whatsapp)}" placeholder="+92 300 1234567"></label>
+          <h3 style="margin-top:18px">Welcome popup</h3>
+          <p class="muted">New visitors get a discount code for their email. Uses a “% off” coupon.</p>
+          <label class="checks"><label><input type="checkbox" name="popupEnabled" ${st.popup.enabled ? "checked" : ""}> Show the popup</label></label>
+          <div class="row2">
+            <label class="fl"><span>Coupon</span><select class="field" name="popupCode">${coupons.map((c) => `<option ${c === st.popup.code ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+            <label class="fl"><span>Show after (seconds)</span><input class="field" name="popupDelay" type="number" min="0" max="120" value="${st.popup.delay}"></label>
+          </div>
+        </section>
+        <section class="panel set-sec">
+          <h3>Announcement bar</h3>
+          <p class="muted">The line at the very top of the store. Empty = automatic free-shipping message for the customer's country.</p>
+          <div class="lang-tabs">${languages.map((l) => `<button type="button" class="lt ${l.code === annLang ? "on" : ""} ${st.announcement[l.code] ? "ok" : ""}" data-ann="${l.code}">${l.code.toUpperCase()}</button>`).join("")}</div>
+          ${languages.map((l) => `<label class="fl ann-field" data-ann-field="${l.code}" ${l.code === annLang ? "" : "hidden"}><span>${esc(l.name)}</span><input class="field" name="ann_${l.code}" dir="${l.dir}" maxlength="160" value="${esc(st.announcement[l.code] || "")}" placeholder="e.g. Eid Sale — 20% off everything"></label>`).join("")}
+        </section>
+        <button class="btn">Save settings</button>
+      </form>`);
+  }
+
   // ---------- messages ----------
   async function messages() {
     const d = await api("/api/admin/messages");
@@ -365,7 +442,7 @@
   async function show() {
     if (!token) return login();
     tab = location.hash.slice(1) || "dashboard";
-    try { await ({ dashboard, orders, products, countries: countriesView, seo: seoView, messages }[tab] || dashboard)(); }
+    try { await ({ dashboard, orders, products, countries: countriesView, coupons: couponsView, reviews: reviewsView, seo: seoView, settings: settingsView, messages }[tab] || dashboard)(); }
     catch (e) { if (token) { shell(`<p class="notice">${esc(e.message)}</p>`); } }
   }
 
@@ -378,6 +455,12 @@
         token = t; sessionStorage.setItem("adminToken", t); show();
       } catch (err) { login(err.message); }
     }
+    if (e.target.id === "settingsForm") {
+      const f = e.target, v = (n) => f.querySelector(`[name="${n}"]`);
+      const body = { whatsapp: v("whatsapp").value, popup: { enabled: v("popupEnabled").checked, code: v("popupCode").value, delay: v("popupDelay").value }, announcement: {} };
+      LANGS.forEach((l) => (body.announcement[l.code] = v("ann_" + l.code).value));
+      try { await api("/api/admin/settings", { method: "PUT", body }); toast("Settings saved"); settingsView(); } catch (err) { toast(err.message); }
+    }
     if (e.target.id === "seoForm") {
       const body = Object.fromEntries(new FormData(e.target));
       try { await api(`/api/admin/seo/${seoLang}`, { method: "PUT", body }); toast("SEO saved"); seoView(); } catch (err) { toast(err.message); }
@@ -385,7 +468,7 @@
   });
   document.addEventListener("click", async (e) => {
     if (e.target.id === "adminModal") return e.target.remove();
-    const b = e.target.closest("[data-logout],[data-filter],[data-open],[data-close],[data-read],[data-new-product],[data-edit],[data-delete],[data-elang],[data-save-product],[data-save-country],[data-reset-seo]");
+    const b = e.target.closest("[data-logout],[data-filter],[data-open],[data-close],[data-read],[data-new-product],[data-edit],[data-delete],[data-elang],[data-save-product],[data-save-country],[data-reset-seo],[data-save-coupon],[data-del-coupon],[data-review],[data-del-review],[data-ann]");
     if (!b) return;
     if (b.matches("[data-logout]")) logout();
     if (b.dataset.filter) { filter = b.dataset.filter; orders(); }
@@ -403,12 +486,17 @@
     if (b.dataset.elang) { saveLangInputs(); editLang = b.dataset.elang; renderLangPanel(); }
     if (b.matches("[data-save-product]")) saveProduct();
     if (b.matches("[data-save-country]")) saveCountry(b.closest("tr"));
+    if (b.matches("[data-save-coupon]")) saveCoupon(b.closest("tr"));
+    if (b.dataset.delCoupon && window.confirm(`Delete coupon ${b.dataset.delCoupon}?`)) { try { await api(`/api/admin/coupons/${encodeURIComponent(b.dataset.delCoupon)}`, { method: "DELETE" }); toast("Coupon deleted"); couponsView(); } catch (err) { toast(err.message); } }
+    if (b.dataset.review) { try { await api(`/api/admin/reviews/${b.dataset.review}`, { method: "PATCH", body: { status: b.dataset.st } }); toast(`Review ${b.dataset.st}`); reviewsView(); } catch (err) { toast(err.message); } }
+    if (b.dataset.delReview && window.confirm("Delete this review?")) { await api(`/api/admin/reviews/${b.dataset.delReview}`, { method: "DELETE" }); toast("Review deleted"); reviewsView(); }
+    if (b.dataset.ann) { annLang = b.dataset.ann; document.querySelectorAll("[data-ann]").forEach((x) => x.classList.toggle("on", x === b)); document.querySelectorAll("[data-ann-field]").forEach((x) => (x.hidden = x.dataset.annField !== annLang)); }
     if (b.dataset.resetSeo) { const el = $(`#seoForm [name="${b.dataset.resetSeo}"]`); el.value = seoData.defaults[seoLang][b.dataset.resetSeo]; seoCounters(); }
   });
   document.addEventListener("change", async (e) => {
     const el = e.target;
     if (el.id === "seoLang") { seoLang = el.value; return seoView(); }
-    if (el.closest("#productForm") || el.closest("table.countries")) return;
+    if (el.closest("#productForm") || el.closest("table.countries") || el.closest("#settingsForm")) return;
     try {
       if (el.dataset.status) {
         const o = await api(`/api/admin/orders/${encodeURIComponent(el.dataset.status)}`, { method: "PATCH", body: { status: el.value } });

@@ -110,3 +110,10 @@ table.countries select.field { max-width: 130px; }
 .serp p { color: #4d5156; font-size: 14px; line-height: 1.5; }
 code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 12px; }
 @media (max-width: 900px) { .pe-grid { grid-template-columns: 1fr; } .pe-img { max-width: 240px; } }
+.set-sec { display: grid; gap: 8px; align-content: start; }
+#settingsForm > .btn { justify-self: start; }
+.thumb.sm { width: 32px; height: 32px; border-radius: 8px; }
+.rv-prod { display: inline-flex; align-items: center; gap: 8px; }
+.stars-txt { color: #f5a524; letter-spacing: 1px; }
+.st { font-weight: 600; text-transform: capitalize; }
+.st-pending { color: #b45309; } .st-approved { color: #15803d; } .st-hidden { color: var(--muted); }

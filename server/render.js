@@ -39,11 +39,11 @@ function resolve(pathname, products) {
   const lang = parts[0];
   if (!CODES.includes(lang)) return null;
   const page = parts[1] || "", arg = parts[2] ? decodeURIComponent(parts[2]) : "";
-  const known = ["", "shop", "category", "product", "cart", "checkout", "order", "track", "about", "contact"];
+  const known = ["", "shop", "category", "product", "cart", "checkout", "order", "track", "about", "contact", "wishlist"];
   if (!known.includes(page) || parts.length > 3) return { lang, page: "404" };
   if (page === "category" && !CATEGORIES.includes(arg)) return { lang, page: "404" };
   if (page === "product" && !products.some((p) => p.id === +arg)) return { lang, page: "404" };
-  if (["", "shop", "cart", "checkout", "track", "about", "contact"].includes(page) && arg) return { lang, page: "404" };
+  if (["", "shop", "cart", "checkout", "track", "about", "contact", "wishlist"].includes(page) && arg) return { lang, page: "404" };
   return { lang, page, arg };
 }
 
@@ -69,7 +69,10 @@ function meta(route, ctx) {
       desc = p.seoDesc || d.metaProductDesc.replace("{name}", p.name).replace("{price}", money(p.price, lang, c));
       image = absolute(p.img.replace("w=800", "w=1200"));
       crumbs.push({ name: d[p.cat], url: base + pagePath(lang, "category", p.cat) }, { name: p.name, url: base + pagePath(lang, "product", p.id) });
+      const rv = ctx.reviews || [];
       ld.push({
+        ...(p.reviewCount ? { aggregateRating: { "@type": "AggregateRating", ratingValue: p.rating, reviewCount: p.reviewCount, bestRating: 5, worstRating: 1 } } : {}),
+        ...(rv.length ? { review: rv.map((r) => ({ "@type": "Review", author: { "@type": "Person", name: r.name }, datePublished: r.at.slice(0, 10), reviewBody: r.text, reviewRating: { "@type": "Rating", ratingValue: r.rating, bestRating: 5 } })) } : {}),
         "@context": "https://schema.org", "@type": "Product", name: p.name, image: [image], description: p.desc, sku: "ST-" + p.id, category: d[p.cat],
         brand: { "@type": "Brand", name: "STORE" },
         offers: {
@@ -86,6 +89,7 @@ function meta(route, ctx) {
     case "checkout": title = `${d.checkoutTitle} | STORE`; desc = d.metaHomeDesc; break;
     case "order": title = `${d.orderNo} | STORE`; desc = d.metaHomeDesc; break;
     case "track": title = `${d.trackTitle} | STORE`; desc = d.trackText; break;
+    case "wishlist": title = `${d.wishlist} | STORE`; desc = d.metaHomeDesc; break;
     default: title = `404 | STORE`; desc = d.noResults;
   }
   if (crumbs.length > 1) ld.push({ "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: crumbs.map((x, i) => ({ "@type": "ListItem", position: i + 1, name: x.name, item: x.url })) });
@@ -158,7 +162,7 @@ let TEMPLATE = null;
 function renderPage(route, ctx) {
   if (!TEMPLATE || process.env.NODE_ENV !== "production") TEMPLATE = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   const info = langInfo(route.lang);
-  const site = { lang: route.lang, dir: info.dir, bcp47: bcp(route.lang), langs: LANGS, dict: ctx.dict, country: ctx.country, countries: ctx.countries, products: ctx.products };
+  const site = { lang: route.lang, dir: info.dir, bcp47: bcp(route.lang), langs: LANGS, dict: ctx.dict, country: ctx.country, countries: ctx.countries, products: ctx.products, settings: ctx.settings || {} };
   return TEMPLATE
     .replace("{{LANG}}", route.lang).replace("{{DIR}}", info.dir)
     .replace("<!--HEAD-->", meta(route, ctx))
@@ -178,7 +182,7 @@ function sitemap(products) {
 }
 
 function robots() {
-  return `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n${CODES.map((c) => `Disallow: /${c}/cart\nDisallow: /${c}/checkout\nDisallow: /${c}/order/\nDisallow: /${c}/track`).join("\n")}\n\nSitemap: ${siteUrl()}/sitemap.xml\n`;
+  return `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n${CODES.map((c) => `Disallow: /${c}/cart\nDisallow: /${c}/checkout\nDisallow: /${c}/order/\nDisallow: /${c}/track\nDisallow: /${c}/wishlist`).join("\n")}\n\nSitemap: ${siteUrl()}/sitemap.xml\n`;
 }
 
 module.exports = { CODES, LANGS, DICTS, SEO_KEYS, dictFor, pickLanguage, resolve, renderPage, sitemap, robots };

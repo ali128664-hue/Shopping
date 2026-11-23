@@ -35,9 +35,20 @@ Orders, stock changes, messages and subscribers are saved in `data/db.json`.
 - Product prices are kept in USD and converted; orders are saved in the customer's currency (with the USD value for reports)
 - ⚠ The starting exchange rates are examples — set real rates before going live
 
+**Sales boosters**
+- WhatsApp: floating chat button, “Order on WhatsApp” on every product (with size and price filled in) and “Confirm on WhatsApp” after checkout — set the number in Admin → Settings
+- Slide-out cart with a free-shipping progress bar and “Complete the look” suggestions
+- Welcome popup: a discount code in exchange for an email (code is applied at checkout automatically)
+- Real customer reviews with approval; star ratings in Google from approved reviews only
+- Sticky “Add to cart” bar on phones, wishlist page, recently viewed, size guide
+- Announcement bar per language (or an automatic free-shipping message per country)
+
 **Admin**
 - Products: add, edit, hide or delete; upload images; name, description and SEO title/description in all 17 languages
 - SEO: edit page titles and descriptions per language, with a Google preview
+- Coupons: create codes (% off, fixed amount, free shipping) with minimum order, expiry and usage limit
+- Reviews: approve, hide or delete
+- Settings: WhatsApp number, welcome popup, announcement bar
 - Orders (with country and currency), sales by country, low stock, messages, CSV export
 
 **Store**
