@@ -62,7 +62,11 @@ window.I18N = {
     remove: "Remove", orderPlaced: "Demo store — checkout is not connected to payments.",
     aboutTitle: "Our Story",
     aboutText: "STORE was founded on a simple belief: every man deserves clothing that fits perfectly and lasts for years. We hand-pick pieces from skilled makers and premium mills, balancing classic tailoring with modern ease.",
-    contactTitle: "Get in Touch", name: "Name", message: "Message", send: "Send Message", sent: "Message sent. We'll reply soon!"
+    contactTitle: "Get in Touch", name: "Name", message: "Message", send: "Send Message", sent: "Message sent. We'll reply soon!",
+    frTitle: "Fitting room", frHint: "Tap the hanger on any product to wear it.", frKey: "Add your API key", frKeySet: "API key added", frReset: "Start over",
+    frTry: "Try it on", frWearing: "Now wearing", frGenerate: "Generate realistic look", frGenerating: "Generating your look…", frBack: "Back to mannequin",
+    frKeyTitle: "Gemini API key", frKeyText: "Add your own Google Gemini API key to create a realistic AI try-on. The key is stored only in this browser.",
+    frKeyGet: "Get a free key at Google AI Studio", frSave: "Save", frRemove: "Remove key", frCancel: "Cancel", frError: "Could not generate the image. Check your API key and try again.", frEmpty: "Wear at least one item first.", frWorn: "Added to fitting room"
   },
   ar: {
     brand: "STORE", home: "الرئيسية", shop: "المتجر", newArrivals: "وصل حديثاً", sale: "تخفيضات", cart: "السلة", searchLbl: "بحث",
@@ -101,6 +105,10 @@ window.I18N = {
     remove: "إزالة", orderPlaced: "متجر تجريبي — الدفع غير مفعّل.",
     aboutTitle: "قصتنا",
     aboutText: "تأسس STORE على فكرة بسيطة: كل رجل يستحق ملابس مثالية المقاس تدوم لسنوات. نختار القطع من حرفيين ومصانع فاخرة.",
-    contactTitle: "تواصل معنا", name: "الاسم", message: "الرسالة", send: "إرسال", sent: "تم إرسال رسالتك!"
+    contactTitle: "تواصل معنا", name: "الاسم", message: "الرسالة", send: "إرسال", sent: "تم إرسال رسالتك!",
+    frTitle: "غرفة القياس", frHint: "اضغط على علّاقة أي منتج لتجربته.", frKey: "أضف مفتاح API", frKeySet: "تمت إضافة المفتاح", frReset: "ابدأ من جديد",
+    frTry: "جرّبه", frWearing: "ترتدي الآن", frGenerate: "إنشاء مظهر واقعي", frGenerating: "جارٍ إنشاء مظهرك…", frBack: "العودة إلى المانيكان",
+    frKeyTitle: "مفتاح Gemini API", frKeyText: "أضف مفتاح Google Gemini الخاص بك لإنشاء تجربة واقعية بالذكاء الاصطناعي. يُحفظ المفتاح في هذا المتصفح فقط.",
+    frKeyGet: "احصل على مفتاح مجاني من Google AI Studio", frSave: "حفظ", frRemove: "حذف المفتاح", frCancel: "إلغاء", frError: "تعذّر إنشاء الصورة. تحقق من المفتاح وحاول مجدداً.", frEmpty: "ارتدِ قطعة واحدة على الأقل أولاً.", frWorn: "أضيف إلى غرفة القياس"
   }
 };

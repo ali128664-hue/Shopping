@@ -8,7 +8,8 @@ A responsive, bilingual (English / Arabic with RTL) fashion store front-end, wit
 - Product page: size & quantity selection, related products
 - Cart: quantity update, remove, subtotal / free shipping over $75 (saved in localStorage)
 - About & Contact pages
-- English ⇄ Arabic (RTL) switch, light / dark mode, mobile menu
+- Fitting room: tap the hanger on any product to dress the mannequin; add your own Google Gemini API key for a realistic AI try-on (key stays in your browser)
+- Search popup (Ctrl+K), wishlist, English ⇄ Arabic (RTL), light / dark mode, mobile menu
 
 ## Tech
 Plain HTML, CSS and JavaScript — no build step, no dependencies.

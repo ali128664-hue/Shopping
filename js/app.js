@@ -9,6 +9,7 @@
   let cart = store.get("cart", []);
   let wish = store.get("wish", []);
   let lang = "en";
+  window.STORE = { t: (k) => t(k), get lang() { return lang; }, toast: (m) => toast(m), icons: null };
   const t = (k) => I18N[lang][k] ?? k;
   const name = (p) => p[lang];
   const money = (n) => "$" + n;
@@ -31,9 +32,11 @@
     shield: '<svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/></svg>',
     badge: '<svg viewBox="0 0 24 24"><path d="m12 2 2.4 2.1 3.2-.3.9 3.1 2.8 1.6-1.2 3 1.2 3-2.8 1.6-.9 3.1-3.2-.3L12 22l-2.4-2.1-3.2.3-.9-3.1-2.8-1.6 1.2-3-1.2-3 2.8-1.6.9-3.1 3.2.3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>',
     menu: '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+    hanger: '<svg viewBox="0 0 24 24"><path d="M12 7.5a2 2 0 1 1 2-2c0 1.2-2 1.6-2 3v1.2L3 15.5a1.4 1.4 0 0 0 .8 2.5h16.4a1.4 1.4 0 0 0 .8-2.5L12 9.7"/></svg>',
     star: '<svg viewBox="0 0 24 24" class="fill"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"/></svg>'
   };
 
+  window.STORE.icons = I;
   // ---------- cart ----------
   function saveCart() { store.set("cart", cart); updateCounts(); }
   function addToCart(id, size = "M", qty = 1) {
@@ -57,6 +60,7 @@
     <article class="pcard reveal">
       <a href="${link("product/" + p.id)}" class="pcard-img"><img src="${p.img}" alt="${name(p)}" loading="lazy"></a>
       <button class="round heart ${liked ? "on" : ""}" data-wish="${p.id}" aria-label="Wishlist">${I.heart}</button>
+      <button class="round hanger" data-try="${p.id}" aria-label="${t("frTry")}" title="${t("frTry")}">${I.hanger}</button>
       <span class="rating">${I.star}${p.rating}</span>
       ${p.isNew ? `<span class="tag">${t("new")}</span>` : ""}
       <div class="pcard-body">
@@ -257,6 +261,7 @@
         <div class="qty"><button data-q="-1">−</button><span id="qtyVal">1</span><button data-q="1">+</button></div>
         <div class="buy-row">
           <button class="btn grow" data-add-detail="${p.id}" data-default-size="${sizes[1]}">${t("addToCart")} ${I.bag}</button>
+          <button class="round big-heart hanger" data-try="${p.id}" title="${t("frTry")}">${I.hanger}</button>
           <button class="round big-heart heart ${wish.includes(p.id) ? "on" : ""}" data-wish="${p.id}">${I.heart}</button>
         </div>
         <ul class="perks"><li>${I.truck}${t("f1d")}</li><li>${I.refresh}${t("f2d")}</li><li>${I.shield}${t("f3d")}</li></ul>
@@ -328,6 +333,7 @@
     document.title = `STORE | ${lang === "ar" ? "متجر أزياء فاخر" : "Premium Fashion Store"}`;
     const view = { "": home, shop: () => shop(params), product: () => product(arg), cart: cartPage, about, contact }[page] || home;
     app.innerHTML = header() + `<main id="main-content">${view()}</main>` + footer();
+    window.dispatchEvent(new CustomEvent("store:render"));
     detailSize = $("[data-default-size]")?.dataset.defaultSize || "M"; detailQty = 1;
     updateCounts();
     observe();
