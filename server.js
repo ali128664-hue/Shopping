@@ -4,6 +4,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
 
 const ROOT = __dirname;
 loadEnv(path.join(ROOT, ".env"));
@@ -18,6 +19,21 @@ const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("he
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-image";
 const UPLOADS = path.join(db.DATA_DIR, "uploads");
+const HOST = process.env.HOST || "0.0.0.0"; // 0.0.0.0 = reachable from phones on the same Wi-Fi
+
+// addresses other devices on the same network can use (e.g. http://192.168.1.5:3000)
+function lanUrls() {
+  const out = [];
+  for (const [name, list] of Object.entries(os.networkInterfaces())) {
+    for (const a of list || []) {
+      if (a.family !== "IPv4" && a.family !== 4) continue;
+      if (a.internal || a.address.startsWith("169.254.")) continue;
+      if (/vEthernet|VirtualBox|VMware|WSL|Hyper-V|docker|vbox|tailscale|zerotier/i.test(name)) continue;
+      out.push(`http://${a.address}:${PORT}`);
+    }
+  }
+  return out;
+}
 
 // ---------- store settings ----------
 // starting coupons — managed in Admin → Coupons. Fixed amounts and minimums are in USD.
@@ -308,6 +324,7 @@ route("GET", "/api/admin/stats", (req) => {
     subscribers: st.subscribers.length,
     unreadMessages: st.messages.filter((m) => !m.read).length,
     pendingReviews: reviews().filter((r) => r.status === "pending").length,
+    lanUrls: lanUrls(),
     lowStock: catalog.list(true).filter((p) => p.stock <= 5).map((p) => ({ id: p.id, name: catalog.nameOf(p), stock: p.stock })),
     topProducts: Object.entries(sold).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, qty]) => { const p = catalog.find(id); return { id: +id, name: p ? catalog.nameOf(p) : `#${id}`, qty }; }),
     byCountry: Object.values(byCountry).map((x) => ({ ...x, revenue: Math.round(x.revenue * 100) / 100 })).sort((a, b) => b.revenue - a.revenue),
@@ -526,8 +543,15 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   catalog.all(); countries.all(); coupons(); settings(); reviews(); db.save(); // create/upgrade the database on start
-  server.listen(PORT, () => {
+  server.on("error", (e) => {
+    if (e.code === "EADDRINUSE") console.error(`\n  ✖ Port ${PORT} is already in use — the store is probably already running in another window. Close it first.\n`);
+    else console.error(e);
+    process.exit(1);
+  });
+  server.listen(PORT, HOST, () => {
     console.log(`\n  STORE is running →  http://localhost:${PORT}   (${seo.CODES.length} languages, ${countries.list().length} countries)`);
+    const lan = lanUrls();
+    if (lan.length) console.log(`  On your phone    →  ${lan.join("   or   ")}   (same Wi-Fi)`);
     console.log(`  Admin panel      →  http://localhost:${PORT}/admin`);
     console.log(`  AI try-on        →  ${GEMINI_API_KEY ? "enabled" : "disabled (add GEMINI_API_KEY to .env)"}`);
     if (!process.env.ADMIN_PASSWORD) console.log("  ⚠  Using default admin password 'admin123' — set ADMIN_PASSWORD in .env");

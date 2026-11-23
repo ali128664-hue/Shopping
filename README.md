@@ -15,6 +15,8 @@ node server.js
 
 4. Open the store at http://localhost:3000 and the admin panel at http://localhost:3000/admin
 
+**On your phone (same Wi-Fi):** the server window shows an address like `http://192.168.1.5:3000` (also as a QR code in Admin → Dashboard). If the phone can't open it, run `allow-phone-access.bat` once (it opens port 3000 in Windows Firewall for private networks) and make sure the Wi-Fi is set to *Private network* in Windows.
+
 Orders, stock changes, messages and subscribers are saved in `data/db.json`.
 
 ## Features

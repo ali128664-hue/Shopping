@@ -72,6 +72,7 @@
           ${s.byCountry.length ? `<ul class="toplist">${s.byCountry.map((c) => `<li><span>${flag(c.code)} ${esc(c.name)}</span><b>${c.orders} orders · ${money(c.revenue)}</b></li>`).join("")}</ul>` : `<p class="muted">No sales yet.</p>`}
         </section>
         <section class="panel">
+          ${s.lanUrls && s.lanUrls.length ? `<div class="phone-box"><img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=0&data=${encodeURIComponent(s.lanUrls[0])}" alt="QR code" width="120" height="120"><div><h3>Open on your phone</h3><p class="muted">Phone must be on the same Wi-Fi. Scan the code or type:</p>${s.lanUrls.map((u) => `<b class="lan-url">${esc(u)}</b>`).join("")}</div></div>` : ""}
           <h3>Top products</h3>
           ${s.topProducts.length ? `<ol class="toplist">${s.topProducts.map((p) => `<li><span>${esc(p.name)}</span><b>${p.qty} sold</b></li>`).join("")}</ol>` : `<p class="muted">No sales yet.</p>`}
           <h3 style="margin-top:22px">Low stock</h3>
