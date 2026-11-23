@@ -86,7 +86,7 @@
           <button class="fr-zoom" data-fr="zoom" aria-label="Zoom">${I.search}</button>
           ${aiImage ? `<button class="fr-back" data-fr="back">${t("frBack")}</button>` : ""}
         </div>
-        ${items.length ? `<div class="fr-items">${items.map((p) => `<span class="fr-chip"><img src="${p.img}" alt="">${p[S.lang]}<button data-fr-remove="${p.id}" aria-label="Remove">×</button></span>`).join("")}</div>` : ""}
+        ${items.length ? `<div class="fr-items">${items.map((p) => `<span class="fr-chip"><img src="${p.img}" alt="">${S.name(p)}<button data-fr-remove="${p.id}" aria-label="Remove">×</button></span>`).join("")}</div>` : ""}
         ${(key || serverAI()) && items.length ? `<button class="btn full fr-gen" data-fr="generate" ${busy ? "disabled" : ""}>✨ ${t("frGenerate")}</button>` : ""}
         <footer>
           ${serverAI() ? `<span class="fr-ready">✨ AI</span>` : `<button class="btn fr-key" data-fr="key">🔑 ${key ? t("frKeySet") : t("frKey")}</button>`}
@@ -156,7 +156,7 @@
         aiImage = j.image; busy = false; return render();
       }
       const garments = await Promise.all(items.map((p) => urlToB64(p.img)));
-      const prompt = `Photorealistic fashion studio photo. Dress the plain grey store mannequin in the FIRST image with the clothing items shown in the following images (${items.map((p) => p.en).join(", ")}). Keep the mannequin's pose, full-body framing and neutral light-grey studio background. The garments must fit naturally with realistic folds, shadows and fabric texture. Do not add a real person, face or text.`;
+      const prompt = `Photorealistic fashion studio photo. Dress the plain grey store mannequin in the FIRST image with the clothing items shown in the following images (${items.map((p) => S.name(p)).join(", ")}). Keep the mannequin's pose, full-body framing and neutral light-grey studio background. The garments must fit naturally with realistic folds, shadows and fabric texture. Do not add a real person, face or text.`;
       const body = { contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/png", data: base } }, ...garments.map((g) => ({ inline_data: { mime_type: "image/jpeg", data: g } }))] }] };
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
         method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify(body)

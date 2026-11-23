@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const ROOT = __dirname;
 loadEnv(path.join(ROOT, ".env"));
 const db = require("./server/db");
+const seo = require("./server/render");
 
 const PORT = +process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
@@ -47,7 +48,7 @@ function products(includeInactive = false) {
   return CATALOG.map((p) => {
     const o = st.products[p.id] || {};
     return {
-      id: p.id, cat: p.cat, en: p.en, ar: p.ar, img: p.img, rating: p.rating, isNew: !!p.isNew,
+      id: p.id, cat: p.cat, en: seo.DICTS.en["p" + p.id], img: p.img, rating: p.rating, isNew: !!p.isNew,
       price: o.price ?? p.price,
       oldPrice: o.oldPrice !== undefined ? o.oldPrice : (p.oldPrice ?? null),
       stock: o.stock ?? DEFAULT_STOCK,
@@ -66,7 +67,7 @@ function quote({ items, coupon, shipping }) {
     const qty = Math.floor(+i.qty);
     if (!p) throw httpError(400, "A product in your cart is no longer available.");
     if (!(qty >= 1 && qty <= 20)) throw httpError(400, "Invalid quantity.");
-    return { id: p.id, name: p.en, nameAr: p.ar, img: p.img, size: String(i.size || "").slice(0, 10), qty, price: p.price, total: p.price * qty, stock: p.stock };
+    return { id: p.id, name: p.en, img: p.img, size: String(i.size || "").slice(0, 10), qty, price: p.price, total: p.price * qty, stock: p.stock };
   });
   const subtotal = lines.reduce((s, l) => s + l.total, 0);
   const method = SHIPPING[shipping] ? shipping : "standard";
@@ -275,7 +276,7 @@ route("GET", "/api/admin/stats", (req) => {
     subscribers: st.subscribers.length,
     unreadMessages: st.messages.filter((m) => !m.read).length,
     lowStock: products(true).filter((p) => p.stock <= 5).map((p) => ({ id: p.id, name: p.en, stock: p.stock })),
-    topProducts: Object.entries(sold).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, qty]) => ({ id: +id, name: (CATALOG.find((p) => p.id === +id) || {}).en, qty })),
+    topProducts: Object.entries(sold).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, qty]) => ({ id: +id, name: seo.DICTS.en["p" + id], qty })),
     days
   };
 });
@@ -325,9 +326,8 @@ route("PATCH", "/api/admin/messages/:id", (req, p) => { requireAdmin(req); const
 
 // ---------- static files ----------
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".webp": "image/webp", ".json": "application/json" };
-const PUBLIC = [/^\/index\.html$/, /^\/admin\.html$/, /^\/css\/[\w.-]+$/, /^\/js\/(?!config\.js$)[\w.-]+$/, /^\/assets\/[\w./-]+$/];
+const PUBLIC = [/^\/favicon\.svg$/, /^\/admin\.html$/, /^\/css\/[\w.-]+$/, /^\/js\/(?!config\.js$)[\w.-]+$/, /^\/assets\/[\w./-]+$/];
 function serveStatic(req, res, pathname) {
-  if (pathname === "/" || pathname === "") pathname = "/index.html";
   if (pathname === "/admin") pathname = "/admin.html";
   // the browser-only key file is never served; the server keeps the key in .env instead
   if (pathname === "/js/config.js") { res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" }); return res.end("window.STORE_CONFIG = {};"); }
@@ -340,10 +340,39 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+// ---------- pages (SEO: one URL per language and page) ----------
+function servePage(req, res, url) {
+  let pathname;
+  try { pathname = decodeURIComponent(url.pathname); } catch { return send(res, 400, "Bad request"); }
+  if (pathname === "/") {
+    const lang = seo.pickLanguage(req.headers["accept-language"]);
+    res.writeHead(302, { Location: `/${lang}`, Vary: "Accept-Language" }); return res.end();
+  }
+  if (pathname === "/sitemap.xml") return send(res, 200, seo.sitemap(products()), { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+  if (pathname === "/robots.txt") return send(res, 200, seo.robots(), { "Cache-Control": "public, max-age=3600" });
+  if (/\.\w{2,5}$/.test(pathname) || pathname === "/admin") return serveStatic(req, res, pathname);
+  if (pathname.length > 1 && pathname.endsWith("/")) { res.writeHead(301, { Location: pathname.replace(/\/+$/, "") + url.search }); return res.end(); }
+  const list = products();
+  let route = seo.resolve(pathname, list);
+  if (!route) {
+    // old or language-less links like /shop → send them to the visitor's language
+    const lang = seo.pickLanguage(req.headers["accept-language"]);
+    const guess = seo.resolve(`/${lang}${pathname}`, list);
+    if (guess && guess.page !== "404") { res.writeHead(301, { Location: `/${lang}${pathname}${url.search}` }); return res.end(); }
+    route = { lang, page: "404" };
+  }
+  const html = seo.renderPage(route, list);
+  res.writeHead(route.page === "404" ? 404 : 200, { "Content-Type": "text/html; charset=utf-8", "Content-Language": route.lang, "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
+  res.end(req.method === "HEAD" ? undefined : html);
+}
+
 // ---------- server ----------
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
-  if (!url.pathname.startsWith("/api/")) return req.method === "GET" ? serveStatic(req, res, decodeURIComponent(url.pathname)) : send(res, 405, "Method not allowed");
+  if (!url.pathname.startsWith("/api/")) {
+    if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Method not allowed");
+    return servePage(req, res, url);
+  }
   for (const r of routes) {
     const m = r.method === req.method && url.pathname.match(r.re);
     if (!m) continue;
@@ -361,7 +390,7 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   server.listen(PORT, () => {
-    console.log(`\n  STORE is running →  http://localhost:${PORT}`);
+    console.log(`\n  STORE is running →  http://localhost:${PORT}   (${seo.CODES.length} languages)`);
     console.log(`  Admin panel      →  http://localhost:${PORT}/admin`);
     console.log(`  AI try-on        →  ${GEMINI_API_KEY ? "enabled" : "disabled (add GEMINI_API_KEY to .env)"}`);
     if (!process.env.ADMIN_PASSWORD) console.log("  ⚠  Using default admin password 'admin123' — set ADMIN_PASSWORD in .env");

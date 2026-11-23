@@ -17,12 +17,14 @@
   const checkout = { coupon: "", shipping: "standard", payment: "cod", quote: null };
   let wish = store.get("wish", []);
   let lang = "en";
-  window.STORE = { t: (k) => t(k), get lang() { return lang; }, toast: (m) => toast(m), icons: null };
-  const t = (k) => I18N[lang][k] ?? k;
-  const name = (p) => p[lang];
-  const money = (n) => "$" + (Number.isInteger(+n) ? +n : (+n).toFixed(2));
+  window.STORE = { t: (k) => t(k), name: (p) => name(p), get lang() { return lang; }, toast: (m) => toast(m), icons: null };
+  const SITE = window.SITE || { lang: "en", dir: "ltr", bcp47: "en", langs: [{ code: "en", name: "English" }], dict: {} };
+  lang = SITE.lang;
+  const t = (k) => SITE.dict[k] ?? k;
+  const name = (p) => t("p" + p.id);
+  const money = (n) => new Intl.NumberFormat(SITE.bcp47, { style: "currency", currency: "USD", minimumFractionDigits: Number.isInteger(+n) ? 0 : 2 }).format(n);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const link = (path = "") => `#/${lang}${path ? "/" + path : ""}`;
+  const link = (path = "") => `/${lang}${path ? "/" + path : ""}`;
   const two = (thin, bold, tag = "h2") => `<${tag} class="two"><span>${t(thin)}</span> <b>${t(bold)}</b></${tag}>`;
   const kicker = (k) => `<span class="kicker">${t(k)}</span>`;
 
@@ -40,6 +42,7 @@
     refresh: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16m0 4v-4h-4"/></svg>',
     shield: '<svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/></svg>',
     badge: '<svg viewBox="0 0 24 24"><path d="m12 2 2.4 2.1 3.2-.3.9 3.1 2.8 1.6-1.2 3 1.2 3-2.8 1.6-.9 3.1-3.2-.3L12 22l-2.4-2.1-3.2.3-.9-3.1-2.8-1.6 1.2-3-1.2-3 2.8-1.6.9-3.1 3.2.3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>',
+    globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/></svg>',
     menu: '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
     hanger: '<svg viewBox="0 0 24 24"><path d="M12 7.5a2 2 0 1 1 2-2c0 1.2-2 1.6-2 3v1.2L3 15.5a1.4 1.4 0 0 0 .8 2.5h16.4a1.4 1.4 0 0 0 .8-2.5L12 9.7"/></svg>',
     star: '<svg viewBox="0 0 24 24" class="fill"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z"/></svg>'
@@ -86,8 +89,8 @@
   }
 
   function header() {
-    const other = lang === "en" ? "ar" : "en";
-    const route = location.hash.replace(/^#\/(en|ar)/, "");
+    const route = location.pathname.replace(/^\/[a-z]{2}(?=\/|$)/, "") + location.search;
+    const cur = SITE.langs.find((l) => l.code === lang) || SITE.langs[0];
     return `
     <header class="header">
       <div class="wrap">
@@ -101,7 +104,10 @@
           </nav>
           <a href="${link()}" class="logo">STORE</a>
           <div class="actions">
-            <a class="pill lang" href="#/${other}${route}"><span class="flag">${lang === "en" ? "🇺🇸" : "🇸🇦"}</span>${lang.toUpperCase()}</a>
+            <details class="lang-menu">
+              <summary class="pill lang" aria-label="${t("language")}">${I.globe}<span>${cur.code.toUpperCase()}</span></summary>
+              <div class="lang-list">${SITE.langs.map((l) => `<a href="/${l.code}${route}" hreflang="${l.code}" lang="${l.code}" class="${l.code === lang ? "on" : ""}" data-lang>${l.name}</a>`).join("")}</div>
+            </details>
             <button class="icon" data-theme aria-label="Theme">${I.moon}</button>
             <button class="pill search-pill" data-open-search>${I.search}<span>${t("searchLbl")}</span><kbd>Ctrl+K</kbd></button>
             <a class="icon hide-sm" href="${link("contact")}" aria-label="Account">${I.user}</a>
@@ -132,7 +138,7 @@
     <footer class="footer">
       <div class="wrap footer-grid">
         <div><a class="logo" href="${link()}">STORE</a><p>${t("footerText")}</p></div>
-        <div><h4>${t("shop")}</h4>${CATEGORIES.slice(0, 5).map((c) => `<a href="${link("shop?cat=" + c)}">${t(c)}</a>`).join("")}</div>
+        <div><h4>${t("shop")}</h4>${CATEGORIES.slice(0, 5).map((c) => `<a href="${link("category/" + c)}">${t(c)}</a>`).join("")}</div>
         <div><h4>${t("help")}</h4><a href="${link("contact")}">${t("shipping")}</a><a href="${link("contact")}">${t("returns")}</a><a href="${link("contact")}">${t("faq")}</a><a href="${link("track")}">${t("track")}</a></div>
         <div><h4>${t("company")}</h4><a href="${link("about")}">${t("about")}</a><a href="${link("contact")}">${t("contact")}</a><a href="mailto:hello@store.com">hello@store.com</a></div>
       </div>
@@ -169,7 +175,7 @@
       <div class="head reveal"><div>${kicker("curateKicker")}${two("curateThin", "curateBold")}</div><a class="more" href="${link("shop")}">${t("viewAll")} ${I.arrow}</a></div>
       <div class="edits">
         ${edits.map((p, i) => `
-          <a class="edit-card reveal" href="${link("shop?cat=" + p.cat)}">
+          <a class="edit-card reveal" href="${link("category/" + p.cat)}">
             <span class="roman">${["I", "II", "III"][i]}</span>
             <div class="edit-img"><img src="${p.img}" alt="" loading="lazy"></div>
             <small>${t("edit")} ${["I", "II", "III"][i]}</small>
@@ -196,7 +202,7 @@
       <div class="head reveal"><div>${kicker("catKicker")}${two("catThin", "catBold")}</div><a class="more" href="${link("shop")}">${t("viewAll")} ${I.arrow}</a></div>
       <div class="cats">
         ${CATEGORIES.map((c) => `
-          <a class="cat reveal" href="${link("shop?cat=" + c)}"><div class="cat-img"><img src="${PRODUCTS.find((p) => p.cat === c).img}" alt="" loading="lazy"></div><span>${t(c)}</span></a>`).join("")}
+          <a class="cat reveal" href="${link("category/" + c)}"><div class="cat-img"><img src="${PRODUCTS.find((p) => p.cat === c).img}" alt="" loading="lazy"></div><span>${t(c)}</span></a>`).join("")}
       </div>
     </section>
 
@@ -222,15 +228,15 @@
     </section>`;
   }
 
-  function shop(params) {
-    const cat = params.get("cat") || "all";
+  function shop(params, routeCat) {
+    const cat = routeCat || params.get("cat") || "all";
     const q = (params.get("q") || "").toLowerCase();
     const sort = params.get("sort") || "default";
     let list = PRODUCTS.filter((p) =>
       (cat === "all" || p.cat === cat) &&
       (!params.get("new") || p.isNew) &&
       (!params.get("sale") || p.oldPrice) &&
-      (!q || p.en.toLowerCase().includes(q) || p.ar.includes(q)));
+      (!q || name(p).toLowerCase().includes(q)));
     if (sort === "low") list = [...list].sort((a, b) => a.price - b.price);
     if (sort === "high") list = [...list].sort((a, b) => b.price - a.price);
     const title = params.get("new") ? t("newArrivals") : params.get("sale") ? t("sale") : cat !== "all" ? t(cat) : t("shop");
@@ -238,7 +244,7 @@
     <section class="wrap"><div class="page-head">${kicker("catKicker")}<h1 class="two"><b>${title}</b></h1></div></section>
     <section class="wrap section tight">
       <div class="toolbar">
-        <div class="chips">${["all", ...CATEGORIES].map((c) => `<button class="chip ${c === cat ? "active" : ""}" data-filter="cat" data-val="${c}">${t(c)}</button>`).join("")}</div>
+        <div class="chips">${["all", ...CATEGORIES].map((c) => `<a class="chip ${c === cat ? "active" : ""}" href="${c === "all" ? link("shop") : link("category/" + c)}">${t(c)}</a>`).join("")}</div>
         <div class="tools">
           <input class="field" type="search" placeholder="${t("search")}" value="${q}" data-search>
           <select class="field" data-sort>
@@ -262,7 +268,7 @@
     <section class="wrap section tight product">
       <div class="product-img"><img src="${p.img.replace("w=800", "w=1200")}" alt="${name(p)}"></div>
       <div class="product-info">
-        <a href="${link("shop?cat=" + p.cat)}" class="kicker">${t(p.cat)}</a>
+        <a href="${link("category/" + p.cat)}" class="kicker">${t(p.cat)}</a>
         <h1>${name(p)}</h1>
         <div class="rating-line">${I.star.repeat(Math.round(p.rating))} <span>${p.rating}</span></div>
         <div class="price big">${money(p.price)} ${p.oldPrice ? `<s>${money(p.oldPrice)}</s>` : ""}</div>
@@ -401,7 +407,7 @@
       const q = await api("/api/quote", { body: { items: cart, coupon: checkout.coupon, shipping: checkout.shipping } });
       checkout.quote = q;
       box.innerHTML = `
-        <div class="sum-lines">${q.lines.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(lang === "ar" ? l.nameAr : l.name)}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}</div>
+        <div class="sum-lines">${q.lines.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(t("p" + l.id))}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}</div>
         <div class="sum-row"><span>${t("subtotal")}</span><span>${money(q.subtotal)}</span></div>
         ${q.discount ? `<div class="sum-row disc"><span>${t("discount")} (${q.coupon})</span><span>−${money(q.discount)}</span></div>` : ""}
         <div class="sum-row"><span>${t("shippingFee")}</span><span>${q.shipping ? money(q.shipping) : t("free")}</span></div>
@@ -431,7 +437,7 @@
       store.set("customer", customer);
       store.set("lastOrder", { number: order.number, email: order.customer.email });
       cart = []; saveCart(); checkout.coupon = "";
-      location.hash = `#/${lang}/order/${order.number}?email=${encodeURIComponent(order.customer.email)}&new=1`;
+      navigate(`/${lang}/order/${order.number}?email=${encodeURIComponent(order.customer.email)}&new=1`);
     } catch (e) {
       toast(e.message);
       if (e.fields) Object.entries(e.fields).forEach(([k, v]) => { const el = form.querySelector(`[data-err="${k}"]`); if (el) { el.textContent = t(v); form.querySelector(`[name="${k}"]`).classList.add("bad"); } });
@@ -454,7 +460,7 @@
         </div>
         <div class="order-meta">
           <div><small>${t("orderNo")}</small><b>${esc(o.number)}</b></div>
-          <div><small>${t("placedOn")}</small><b>${new Date(o.createdAt).toLocaleDateString(lang === "ar" ? "ar" : "en-GB", { day: "numeric", month: "short", year: "numeric" })}</b></div>
+          <div><small>${t("placedOn")}</small><b>${new Date(o.createdAt).toLocaleDateString(SITE.bcp47, { day: "numeric", month: "short", year: "numeric" })}</b></div>
           <div><small>${t("payment")}</small><b>${t(o.payment)}</b></div>
           <div><small>${t("total")}</small><b class="price">${money(o.total)}</b></div>
         </div>
@@ -464,7 +470,7 @@
           <div><small>${t("bankName")}</small><b>${esc(o.bank.bank)}</b></div><div><small>${t("accTitle")}</small><b>${esc(o.bank.title)}</b></div>
           <div><small>${t("iban")}</small><b>${esc(o.bank.iban)}</b></div><p class="muted">${t("bankRef")}</p></div>` : ""}
         <div class="order-cols">
-          <div><h3 class="co-h">${t("items")}</h3>${o.items.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(lang === "ar" ? l.nameAr : l.name)}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}
+          <div><h3 class="co-h">${t("items")}</h3>${o.items.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(t("p" + l.id))}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}
             <div class="sum-row"><span>${t("subtotal")}</span><span>${money(o.subtotal)}</span></div>
             ${o.discount ? `<div class="sum-row disc"><span>${t("discount")}</span><span>−${money(o.discount)}</span></div>` : ""}
             <div class="sum-row"><span>${t("shippingFee")} · ${t(o.shippingMethod)}</span><span>${o.shipping ? money(o.shipping) : t("free")}</span></div>
@@ -489,18 +495,24 @@
   }
 
   // ---------- router ----------
-  let detailSize = null, detailQty = 1;
+  let detailSize = null, detailQty = 1, rendered = false;
+  function pageTitle(page, arg) {
+    const p = page === "product" && PRODUCTS.find((x) => x.id === +arg);
+    const map = { "": t("metaHomeTitle"), shop: t("metaShopTitle") + " | STORE", category: t(arg) + " | STORE", product: p ? `${name(p)} — ${money(p.price)} | STORE` : "STORE", cart: t("yourCart") + " | STORE", checkout: t("checkoutTitle") + " | STORE", order: t("orderNo") + " | STORE", track: t("trackTitle") + " | STORE", about: t("aboutTitle") + " | STORE", contact: t("contactTitle") + " | STORE" };
+    return map[page] || "STORE";
+  }
+  function notFound() {
+    return `<section class="wrap section"><div class="panel empty-cart"><h1 class="two"><b>404</b></h1><p class="muted">${t("noResults")}</p><a class="btn" href="${link("shop")}">${t("continueShopping")} ${I.arrow}</a></div></section>`;
+  }
   function render() {
-    const hash = location.hash || "#/en";
-    const m = hash.match(/^#\/(en|ar)\/?([^?]*)\??(.*)$/);
-    if (!m) { location.hash = "#/en"; return; }
-    lang = m[1];
-    const [page, arg] = m[2].split("/");
-    const params = new URLSearchParams(m[3]);
+    const parts = location.pathname.split("/").filter(Boolean);
+    const page = parts[1] || "", arg = parts[2] ? decodeURIComponent(parts[2]) : "";
+    const params = new URLSearchParams(location.search);
     document.documentElement.lang = lang;
-    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
-    document.title = `STORE | ${lang === "ar" ? "متجر أزياء فاخر" : "Premium Fashion Store"}`;
-    const view = { "": home, shop: () => shop(params), product: () => product(arg), cart: cartPage, about, contact, checkout: checkoutPage, order: orderPage, track: trackPage }[page] || home;
+    document.documentElement.dir = SITE.dir;
+    if (rendered) document.title = pageTitle(page, arg);
+    rendered = true;
+    const view = { "": home, shop: () => shop(params), category: () => shop(params, arg), product: () => product(arg), cart: cartPage, about, contact, checkout: checkoutPage, order: orderPage, track: trackPage }[page] || notFound;
     app.innerHTML = header() + `<main id="main-content">${view()}</main>` + footer();
     window.dispatchEvent(new CustomEvent("store:render"));
     detailSize = $("[data-default-size]")?.dataset.defaultSize || "M"; detailQty = 1;
@@ -519,11 +531,14 @@
     document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
   }
 
+  function navigate(url, replace = false) {
+    history[replace ? "replaceState" : "pushState"]({}, "", url);
+    render(); if (!replace) window.scrollTo(0, 0);
+  }
   function setParam(key, val) {
-    const [base, qs] = location.hash.split("?");
-    const p = new URLSearchParams(qs);
+    const p = new URLSearchParams(location.search);
     val && val !== "all" && val !== "default" ? p.set(key, val) : p.delete(key);
-    location.hash = base + (p.toString() ? "?" + p : "");
+    navigate(location.pathname + (p.toString() ? "?" + p : ""), key === "q");
   }
 
   // search modal
@@ -533,7 +548,7 @@
   function closeSearch() { const m = $("#searchModal"); if (m) m.hidden = true; }
   function runSearch(q) {
     q = q.toLowerCase();
-    const res = PRODUCTS.filter((p) => !q || p.en.toLowerCase().includes(q) || p.ar.includes(q)).slice(0, 6);
+    const res = PRODUCTS.filter((p) => !q || name(p).toLowerCase().includes(q)).slice(0, 6);
     $("#searchResults").innerHTML = res.length ? res.map((p) => `<a class="sr" href="${link("product/" + p.id)}"><img src="${p.img}" alt=""><span>${name(p)}</span><b>${money(p.price)}</b></a>`).join("") : `<p class="muted empty">${t("noResults")}</p>`;
   }
 
@@ -582,7 +597,7 @@
     e.preventDefault();
     const f = e.target;
     if (f.id === "checkoutForm") return placeOrder(f);
-    if (f.matches("[data-track]")) { const d = Object.fromEntries(new FormData(f)); location.hash = `#/${lang}/order/${encodeURIComponent(d.number.trim())}?email=${encodeURIComponent(d.email.trim())}`; return; }
+    if (f.matches("[data-track]")) { const d = Object.fromEntries(new FormData(f)); navigate(`/${lang}/order/${encodeURIComponent(d.number.trim())}?email=${encodeURIComponent(d.email.trim())}`); return; }
     if (f.matches("[data-subscribe]")) {
       const email = f.querySelector("input").value;
       (API.ok ? api("/api/newsletter", { body: { email } }) : Promise.resolve()).then(() => { toast(t("subscribed")); f.reset(); }).catch((err) => toast(err.message));
@@ -593,7 +608,18 @@
     }
   });
 
-  window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+  window.addEventListener("popstate", () => render());
+  // client-side navigation for links inside the current language (other languages load a fresh, server-rendered page)
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[href]");
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || a.target || a.hasAttribute("download")) return;
+    const url = new URL(a.href, location.href);
+    if (url.origin !== location.origin || !url.pathname.startsWith(`/${lang}`) || a.hasAttribute("data-lang")) return;
+    e.preventDefault();
+    document.querySelectorAll("details.lang-menu[open]").forEach((d) => d.removeAttribute("open"));
+    $("#navLinks")?.classList.remove("open");
+    navigate(url.pathname + url.search);
+  });
   if (store.get("dark", false)) document.documentElement.classList.add("dark");
 
   // load live prices/stock from the backend (falls back to js/data.js when opened without the server)
