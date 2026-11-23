@@ -3,27 +3,24 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
 const crypto = require("crypto");
 
 const ROOT = __dirname;
 loadEnv(path.join(ROOT, ".env"));
 const db = require("./server/db");
 const seo = require("./server/render");
+const catalog = require("./server/catalog");
+const countries = require("./server/countries");
 
 const PORT = +process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-image";
-const DEFAULT_STOCK = 25;
+const UPLOADS = path.join(db.DATA_DIR, "uploads");
 
 // ---------- store settings ----------
-const SHIPPING = {
-  standard: { price: 9, freeOver: 75, days: "3-5" },
-  express: { price: 19, freeOver: null, days: "1-2" }
-};
-const PAYMENTS = ["cod", "bank"];
+// coupon amounts are in USD and converted to the customer's currency
 const COUPONS = {
   WELCOME10: { type: "percent", value: 10, min: 0 },
   SAVE20: { type: "fixed", value: 20, min: 150 },
@@ -36,59 +33,48 @@ const BANK = {
 };
 const STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
 
-// ---------- products: js/data.js is the catalog, db keeps price/stock edits ----------
-const CATALOG = (() => {
-  const ctx = { window: {} };
-  vm.runInNewContext(fs.readFileSync(path.join(ROOT, "js", "data.js"), "utf8"), ctx);
-  return ctx.window.PRODUCTS;
-})();
+const seoOverrides = () => { const st = db.load(); if (!st.seo) st.seo = {}; return st.seo; };
+const localized = (lang) => { const d = seo.dictFor(lang, seoOverrides()); return catalog.list().map((p) => catalog.localize(p, lang, d.productDesc)); };
 
-function products(includeInactive = false) {
-  const st = db.load();
-  return CATALOG.map((p) => {
-    const o = st.products[p.id] || {};
-    return {
-      id: p.id, cat: p.cat, en: seo.DICTS.en["p" + p.id], img: p.img, rating: p.rating, isNew: !!p.isNew,
-      price: o.price ?? p.price,
-      oldPrice: o.oldPrice !== undefined ? o.oldPrice : (p.oldPrice ?? null),
-      stock: o.stock ?? DEFAULT_STOCK,
-      active: o.active ?? true
-    };
-  }).filter((p) => includeInactive || p.active);
-}
-
-// ---------- pricing (always computed on the server) ----------
-function quote({ items, coupon, shipping }) {
+// ---------- pricing (always computed on the server, in the customer's currency) ----------
+function quote({ items, coupon, shipping, country }) {
+  const c = countries.list().find((x) => x.code === String(country || "").toUpperCase());
+  if (!c) throw httpError(400, "Please choose a country we deliver to.");
   if (!Array.isArray(items) || !items.length) throw httpError(400, "Your cart is empty.");
   if (items.length > 50) throw httpError(400, "Too many items.");
-  const list = products();
+  const R = (n) => countries.round(n, c.decimals);
   const lines = items.map((i) => {
-    const p = list.find((x) => x.id === +i.id);
+    const p = catalog.list().find((x) => x.id === +i.id);
     const qty = Math.floor(+i.qty);
     if (!p) throw httpError(400, "A product in your cart is no longer available.");
     if (!(qty >= 1 && qty <= 20)) throw httpError(400, "Invalid quantity.");
-    return { id: p.id, name: p.en, img: p.img, size: String(i.size || "").slice(0, 10), qty, price: p.price, total: p.price * qty, stock: p.stock };
+    const price = countries.convert(p.price, c);
+    return { id: p.id, name: catalog.nameOf(p), img: p.img, size: String(i.size || "").slice(0, 10), qty, price, total: R(price * qty), stock: p.stock };
   });
-  const subtotal = lines.reduce((s, l) => s + l.total, 0);
-  const method = SHIPPING[shipping] ? shipping : "standard";
-  const ship = SHIPPING[method];
-  let shippingCost = ship.freeOver !== null && subtotal >= ship.freeOver ? 0 : ship.price;
+  const subtotal = R(lines.reduce((s, l) => s + l.total, 0));
+  const method = shipping === "express" ? "express" : "standard";
+  let shippingCost = c[method] || 0;
+  if (method === "standard" && c.freeOver !== null && c.freeOver !== undefined && subtotal >= c.freeOver) shippingCost = 0;
 
   let discount = 0, couponApplied = null, couponError = null;
   const code = String(coupon || "").trim().toUpperCase();
+  const min = code && COUPONS[code] ? countries.convert(COUPONS[code].min, c) : 0;
   if (code) {
-    const c = COUPONS[code];
-    if (!c) couponError = "invalid";
-    else if (subtotal < c.min) couponError = "min";
+    const k = COUPONS[code];
+    if (!k) couponError = "invalid";
+    else if (subtotal < min) couponError = "min";
     else {
       couponApplied = code;
-      if (c.type === "percent") discount = Math.round(subtotal * c.value) / 100;
-      if (c.type === "fixed") discount = Math.min(c.value, subtotal);
-      if (c.type === "shipping") shippingCost = 0;
+      if (k.type === "percent") discount = R(subtotal * k.value / 100);
+      if (k.type === "fixed") discount = Math.min(countries.convert(k.value, c), subtotal);
+      if (k.type === "shipping") shippingCost = 0;
     }
   }
-  const round = (n) => Math.round(n * 100) / 100;
-  return { lines, subtotal: round(subtotal), discount: round(discount), shipping: round(shippingCost), shippingMethod: method, total: round(subtotal - discount + shippingCost), coupon: couponApplied, couponError, couponMin: code && COUPONS[code] ? COUPONS[code].min : 0 };
+  return {
+    country: c.code, currency: c.currency, decimals: c.decimals, rate: c.rate,
+    lines, subtotal, discount: R(discount), shipping: R(shippingCost), shippingMethod: method, total: R(subtotal - discount + shippingCost),
+    coupon: couponApplied, couponError, couponMin: min
+  };
 }
 
 // ---------- validation ----------
@@ -97,7 +83,7 @@ const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
 function validateCustomer(c = {}) {
   const out = {
     name: clean(c.name, 80), email: clean(c.email, 120).toLowerCase(), phone: clean(c.phone, 30),
-    address: clean(c.address, 200), city: clean(c.city, 60), country: clean(c.country, 60), postal: clean(c.postal, 20)
+    address: clean(c.address, 200), city: clean(c.city, 60), postal: clean(c.postal, 20)
   };
   const errors = {};
   if (out.name.length < 2) errors.name = "required";
@@ -105,7 +91,6 @@ function validateCustomer(c = {}) {
   if (!/^[+\d][\d\s\-()]{6,}$/.test(out.phone)) errors.phone = "invalid";
   if (out.address.length < 5) errors.address = "required";
   if (out.city.length < 2) errors.city = "required";
-  if (out.country.length < 2) errors.country = "required";
   if (Object.keys(errors).length) { const e = httpError(422, "Please check the highlighted fields."); e.fields = errors; throw e; }
   return out;
 }
@@ -158,46 +143,50 @@ const publicOrder = (o) => ({
   number: o.number, createdAt: o.createdAt, status: o.status, history: o.history,
   customer: { name: o.customer.name, city: o.customer.city, country: o.customer.country, address: o.customer.address, email: o.customer.email },
   items: o.items, subtotal: o.subtotal, discount: o.discount, shipping: o.shipping, shippingMethod: o.shippingMethod, total: o.total,
+  currency: o.currency || "USD", decimals: o.decimals ?? 2, countryCode: o.countryCode,
   payment: o.payment, coupon: o.coupon, bank: o.payment === "bank" ? BANK : undefined
 });
+const usd = (o) => o.totalUSD ?? o.total; // orders before multi-currency were in USD
 
 // ---------- API routes ----------
 const routes = [];
 const route = (method, pattern, handler) => routes.push({ method, re: new RegExp("^" + pattern.replace(/:(\w+)/g, "(?<$1>[^/]+)") + "$"), handler });
 
-route("GET", "/api/config", () => ({ aiEnabled: !!GEMINI_API_KEY, shipping: SHIPPING, payments: PAYMENTS, bank: BANK, currency: "USD" }));
-route("GET", "/api/products", () => products());
+route("GET", "/api/config", () => ({ aiEnabled: !!GEMINI_API_KEY, bank: BANK, countries: countries.list().map(countries.publicCountry) }));
+route("GET", "/api/products", (req, p, url) => { const lang = seo.CODES.includes(url.searchParams.get("lang")) ? url.searchParams.get("lang") : "en"; return localized(lang); });
 route("POST", "/api/quote", async (req) => quote(await readBody(req)));
 
 route("POST", "/api/orders", async (req) => {
   rateLimit("order:" + ip(req), 10, 60e3);
   const body = await readBody(req);
   const customer = validateCustomer(body.customer);
-  if (!PAYMENTS.includes(body.payment)) throw httpError(400, "Please choose a payment method.");
   const q = quote(body);
+  const c = countries.get(q.country);
+  const payments = ["bank", ...(c.cod ? ["cod"] : [])];
+  if (!payments.includes(body.payment)) throw httpError(400, "Please choose a payment method.");
   if (q.couponError) throw httpError(400, "The coupon code is not valid for this order.");
-  const st = db.load();
   // stock check across lines of the same product
   const need = {};
   q.lines.forEach((l) => (need[l.id] = (need[l.id] || 0) + l.qty));
   for (const id in need) {
-    const p = products().find((x) => x.id === +id);
-    if (p.stock < need[id]) throw httpError(409, `Only ${p.stock} left of "${p.en}".`);
+    const p = catalog.find(id);
+    if (p.stock < need[id]) throw httpError(409, `Only ${p.stock} left of "${catalog.nameOf(p)}".`);
   }
-  for (const id in need) {
-    const p = products(true).find((x) => x.id === +id);
-    st.products[id] = { ...(st.products[id] || {}), stock: p.stock - need[id] };
-  }
+  for (const id in need) catalog.find(id).stock -= need[id];
+  const st = db.load();
   st.counters.order += 1;
   const now = new Date().toISOString();
   const order = {
     number: "ST-" + st.counters.order, createdAt: now, status: "pending", history: [{ status: "pending", at: now }],
-    customer, notes: clean(body.notes, 500), payment: body.payment, coupon: q.coupon,
-    items: q.lines.map(({ stock, ...l }) => l), subtotal: q.subtotal, discount: q.discount, shipping: q.shipping, shippingMethod: q.shippingMethod, total: q.total
+    customer: { ...customer, country: c.name }, countryCode: c.code, lang: seo.CODES.includes(body.lang) ? body.lang : "en",
+    notes: clean(body.notes, 500), payment: body.payment, coupon: q.coupon,
+    currency: q.currency, decimals: q.decimals, rate: q.rate,
+    items: q.lines.map(({ stock, ...l }) => l), subtotal: q.subtotal, discount: q.discount, shipping: q.shipping, shippingMethod: q.shippingMethod, total: q.total,
+    totalUSD: Math.round((q.total / q.rate) * 100) / 100
   };
   st.orders.push(order);
   db.save();
-  console.log(`[order] ${order.number}  $${order.total}  ${customer.email}`);
+  console.log(`[order] ${order.number}  ${order.total} ${order.currency}  ${c.code}  ${customer.email}`);
   return publicOrder(order);
 });
 
@@ -227,20 +216,26 @@ route("POST", "/api/newsletter", async (req) => {
   return { ok: true };
 });
 
+async function imageBase64(src) {
+  if (src.startsWith("/uploads/")) {
+    const file = path.join(UPLOADS, path.basename(src));
+    return { mime_type: MIME[path.extname(file)] || "image/jpeg", data: fs.readFileSync(file).toString("base64") };
+  }
+  const r = await fetch(src.replace("w=800", "w=512"));
+  if (!r.ok) throw httpError(502, "Could not load a product image.");
+  return { mime_type: r.headers.get("content-type") || "image/jpeg", data: Buffer.from(await r.arrayBuffer()).toString("base64") };
+}
+
 // AI try-on proxy — keeps the Gemini key on the server
 route("POST", "/api/tryon", async (req) => {
   if (!GEMINI_API_KEY) throw httpError(503, "AI try-on is not configured on the server.");
   rateLimit("ai:" + ip(req), 6, 60e3);
   const b = await readBody(req, 6e6);
   const ids = (Array.isArray(b.items) ? b.items : []).slice(0, 5).map(Number);
-  const list = products().filter((p) => ids.includes(p.id));
+  const list = catalog.list().filter((p) => ids.includes(p.id));
   if (!list.length || typeof b.mannequin !== "string") throw httpError(400, "Wear at least one item first.");
-  const garments = await Promise.all(list.map(async (p) => {
-    const r = await fetch(p.img.replace("w=800", "w=512"));
-    if (!r.ok) throw httpError(502, "Could not load a product image.");
-    return { inline_data: { mime_type: r.headers.get("content-type") || "image/jpeg", data: Buffer.from(await r.arrayBuffer()).toString("base64") } };
-  }));
-  const prompt = `Photorealistic fashion studio photo. Dress the plain grey store mannequin in the FIRST image with the clothing items shown in the following images (${list.map((p) => p.en).join(", ")}). Keep the mannequin's pose, full-body framing and neutral light-grey studio background. The garments must fit naturally with realistic folds, shadows and fabric texture. Do not add a real person, face or text.`;
+  const garments = await Promise.all(list.map(async (p) => ({ inline_data: await imageBase64(p.img) })));
+  const prompt = `Photorealistic fashion studio photo. Dress the plain grey store mannequin in the FIRST image with the clothing items shown in the following images (${list.map((p) => catalog.nameOf(p)).join(", ")}). Keep the mannequin's pose, full-body framing and neutral light-grey studio background. The garments must fit naturally with realistic folds, shadows and fabric texture. Do not add a real person, face or text.`;
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
     method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/png", data: b.mannequin } }, ...garments] }] })
@@ -264,19 +259,20 @@ route("GET", "/api/admin/stats", (req) => {
   requireAdmin(req);
   const st = db.load(), live = st.orders.filter((o) => o.status !== "cancelled");
   const today = new Date().toISOString().slice(0, 10);
-  const days = [...Array(14)].map((_, i) => { const d = new Date(Date.now() - (13 - i) * 864e5).toISOString().slice(0, 10); return { day: d, total: live.filter((o) => o.createdAt.startsWith(d)).reduce((s, o) => s + o.total, 0) }; });
-  const sold = {};
-  live.forEach((o) => o.items.forEach((l) => (sold[l.id] = (sold[l.id] || 0) + l.qty)));
+  const sum = (list) => Math.round(list.reduce((s, o) => s + usd(o), 0) * 100) / 100;
+  const days = [...Array(14)].map((_, i) => { const d = new Date(Date.now() - (13 - i) * 864e5).toISOString().slice(0, 10); return { day: d, total: sum(live.filter((o) => o.createdAt.startsWith(d))) }; });
+  const sold = {}, byCountry = {};
+  live.forEach((o) => { o.items.forEach((l) => (sold[l.id] = (sold[l.id] || 0) + l.qty)); const k = o.countryCode || "—"; byCountry[k] = byCountry[k] || { code: k, name: o.customer.country, orders: 0, revenue: 0 }; byCountry[k].orders++; byCountry[k].revenue += usd(o); });
   return {
-    revenue: live.reduce((s, o) => s + o.total, 0),
-    orders: st.orders.length,
+    revenue: sum(live), orders: st.orders.length,
     pending: st.orders.filter((o) => o.status === "pending").length,
-    todayRevenue: live.filter((o) => o.createdAt.startsWith(today)).reduce((s, o) => s + o.total, 0),
+    todayRevenue: sum(live.filter((o) => o.createdAt.startsWith(today))),
     customers: new Set(st.orders.map((o) => o.customer.email)).size,
     subscribers: st.subscribers.length,
     unreadMessages: st.messages.filter((m) => !m.read).length,
-    lowStock: products(true).filter((p) => p.stock <= 5).map((p) => ({ id: p.id, name: p.en, stock: p.stock })),
-    topProducts: Object.entries(sold).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, qty]) => ({ id: +id, name: seo.DICTS.en["p" + id], qty })),
+    lowStock: catalog.list(true).filter((p) => p.stock <= 5).map((p) => ({ id: p.id, name: catalog.nameOf(p), stock: p.stock })),
+    topProducts: Object.entries(sold).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, qty]) => { const p = catalog.find(id); return { id: +id, name: p ? catalog.nameOf(p) : `#${id}`, qty }; }),
+    byCountry: Object.values(byCountry).map((x) => ({ ...x, revenue: Math.round(x.revenue * 100) / 100 })).sort((a, b) => b.revenue - a.revenue),
     days
   };
 });
@@ -292,33 +288,81 @@ route("PATCH", "/api/admin/orders/:number", async (req, p) => {
   if (o.status === status) return o;
   // give stock back when cancelling, take it again when un-cancelling
   const dir = status === "cancelled" ? 1 : o.status === "cancelled" ? -1 : 0;
-  if (dir) o.items.forEach((l) => { const cur = products(true).find((x) => x.id === l.id); st.products[l.id] = { ...(st.products[l.id] || {}), stock: Math.max(0, cur.stock + dir * l.qty) }; });
+  if (dir) o.items.forEach((l) => { const prod = catalog.find(l.id); if (prod) prod.stock = Math.max(0, prod.stock + dir * l.qty); });
   o.status = status; o.history.push({ status, at: new Date().toISOString() });
   db.save();
   return o;
 });
 
 route("GET", "/api/admin/orders.csv", (req, p, url) => {
-  const token = url.searchParams.get("token");
-  if (!verify(token)) throw httpError(401, "Please log in again.");
+  if (!verify(url.searchParams.get("token"))) throw httpError(401, "Please log in again.");
   const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const rows = [["Order", "Date", "Status", "Name", "Email", "Phone", "City", "Country", "Items", "Payment", "Total"]]
-    .concat(db.load().orders.map((o) => [o.number, o.createdAt, o.status, o.customer.name, o.customer.email, o.customer.phone, o.customer.city, o.customer.country, o.items.map((l) => `${l.qty}x ${l.name} (${l.size})`).join("; "), o.payment, o.total]));
-  return { __raw: rows.map((r) => r.map(q).join(",")).join("\n"), type: "text/csv; charset=utf-8", file: "orders.csv" };
+  const rows = [["Order", "Date", "Status", "Name", "Email", "Phone", "City", "Country", "Items", "Payment", "Total", "Currency", "Total USD"]]
+    .concat(db.load().orders.map((o) => [o.number, o.createdAt, o.status, o.customer.name, o.customer.email, o.customer.phone, o.customer.city, o.customer.country, o.items.map((l) => `${l.qty}x ${l.name} (${l.size})`).join("; "), o.payment, o.total, o.currency || "USD", usd(o)]));
+  return { __raw: "﻿" + rows.map((r) => r.map(q).join(",")).join("\n"), type: "text/csv; charset=utf-8", file: "orders.csv" };
 });
 
-route("GET", "/api/admin/products", (req) => { requireAdmin(req); return products(true); });
-
+// products
+route("GET", "/api/admin/products", (req) => { requireAdmin(req); return catalog.list(true); });
+route("POST", "/api/admin/products", async (req) => { requireAdmin(req); return catalog.create(await readBody(req, 2e5)); });
+route("PUT", "/api/admin/products/:id", async (req, p) => { requireAdmin(req); return catalog.update(p.id, await readBody(req, 2e5)); });
 route("PATCH", "/api/admin/products/:id", async (req, p) => {
   requireAdmin(req);
-  const id = +p.id; if (!CATALOG.some((x) => x.id === id)) throw httpError(404, "Product not found.");
-  const b = await readBody(req), st = db.load(), cur = { ...(st.products[id] || {}) };
-  if (b.price !== undefined) { const v = +b.price; if (!(v > 0 && v < 1e6)) throw httpError(400, "Invalid price."); cur.price = Math.round(v * 100) / 100; }
-  if (b.oldPrice !== undefined) { const v = b.oldPrice === null || b.oldPrice === "" ? null : +b.oldPrice; if (v !== null && !(v > 0)) throw httpError(400, "Invalid old price."); cur.oldPrice = v; }
-  if (b.stock !== undefined) { const v = Math.floor(+b.stock); if (!(v >= 0 && v < 1e6)) throw httpError(400, "Invalid stock."); cur.stock = v; }
-  if (b.active !== undefined) cur.active = !!b.active;
-  st.products[id] = cur; db.save();
-  return products(true).find((x) => x.id === id);
+  const b = await readBody(req), quick = {};
+  ["price", "oldPrice", "stock", "active", "isNew"].forEach((k) => { if (b[k] !== undefined) quick[k] = b[k]; });
+  return catalog.update(p.id, quick);
+});
+route("DELETE", "/api/admin/products/:id", (req, p) => { requireAdmin(req); catalog.remove(p.id); return { ok: true }; });
+
+route("POST", "/api/admin/upload", async (req) => {
+  requireAdmin(req);
+  const { dataUrl } = await readBody(req, 8e6);
+  const m = String(dataUrl || "").match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) throw httpError(400, "Please upload a JPG, PNG or WebP image.");
+  const buf = Buffer.from(m[2], "base64");
+  if (buf.length > 5e6) throw httpError(413, "Image is too large (max 5 MB).");
+  fs.mkdirSync(UPLOADS, { recursive: true });
+  const name = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${m[1] === "jpeg" ? "jpg" : m[1]}`;
+  fs.writeFileSync(path.join(UPLOADS, name), buf);
+  return { url: "/uploads/" + name };
+});
+
+// countries
+route("GET", "/api/admin/countries", (req) => { requireAdmin(req); return { countries: countries.all(), languages: seo.LANGS }; });
+route("PUT", "/api/admin/countries/:code", async (req, p) => {
+  requireAdmin(req);
+  const b = await readBody(req), list = countries.all(), code = p.code.toUpperCase();
+  const i = list.findIndex((c) => c.code === code);
+  if (b.lang !== undefined && !seo.CODES.includes(b.lang)) throw httpError(400, "Unknown language.");
+  if (i < 0) {
+    Object.keys(b).forEach((k) => { if (b[k] === "") delete b[k]; });
+    const c = countries.validate({ active: true, cod: false, decimals: 2, standard: 0, express: 0, freeOver: null, standardDays: "3-5", expressDays: "1-2", lang: "en", ...b, code });
+    if (!c.name || !c.currency || !c.rate) throw httpError(400, "Name, currency and exchange rate are required.");
+    list.push(c); db.save(); return c;
+  }
+  list[i] = countries.validate(b, list[i]);
+  if (!countries.list().length) { list[i].active = true; throw httpError(400, "At least one country must stay active."); }
+  db.save(); return list[i];
+});
+
+// SEO texts per language
+route("GET", "/api/admin/seo", (req) => {
+  requireAdmin(req);
+  const defaults = Object.fromEntries(seo.CODES.map((l) => [l, Object.fromEntries(seo.SEO_KEYS.map((k) => [k, seo.DICTS[l][k]]))]));
+  return { keys: seo.SEO_KEYS, languages: seo.LANGS, defaults, overrides: seoOverrides() };
+});
+route("PUT", "/api/admin/seo/:lang", async (req, p) => {
+  requireAdmin(req);
+  if (!seo.CODES.includes(p.lang)) throw httpError(404, "Unknown language.");
+  const b = await readBody(req), o = seoOverrides(), cur = { ...(o[p.lang] || {}) };
+  for (const k of seo.SEO_KEYS) {
+    if (b[k] === undefined) continue;
+    const v = clean(b[k], 320);
+    if (!v || v === seo.DICTS[p.lang][k]) delete cur[k]; else cur[k] = v;
+    if ((k === "metaCatDesc" && v && !v.includes("{cat}")) || (k === "metaProductDesc" && v && !(v.includes("{name}") && v.includes("{price}")))) throw httpError(400, `${k} must keep the ${k === "metaCatDesc" ? "{cat}" : "{name} and {price}"} placeholder.`);
+  }
+  Object.keys(cur).length ? (o[p.lang] = cur) : delete o[p.lang];
+  db.save(); return o[p.lang] || {};
 });
 
 route("GET", "/api/admin/messages", (req) => { requireAdmin(req); const st = db.load(); return { messages: [...st.messages].reverse(), subscribers: [...st.subscribers].reverse() }; });
@@ -331,11 +375,14 @@ function serveStatic(req, res, pathname) {
   if (pathname === "/admin") pathname = "/admin.html";
   // the browser-only key file is never served; the server keeps the key in .env instead
   if (pathname === "/js/config.js") { res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" }); return res.end("window.STORE_CONFIG = {};"); }
-  if (!PUBLIC.some((r) => r.test(pathname)) || pathname.includes("..")) return send(res, 404, "Not found");
-  const file = path.join(ROOT, pathname);
+  let file;
+  if (/^\/uploads\/[\w-]+\.(jpg|png|webp)$/.test(pathname)) file = path.join(UPLOADS, path.basename(pathname));
+  else if (PUBLIC.some((r) => r.test(pathname)) && !pathname.includes("..")) file = path.join(ROOT, pathname);
+  else return send(res, 404, "Not found");
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, "Not found");
-    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
+    const isUpload = pathname.startsWith("/uploads/");
+    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream", "Cache-Control": isUpload ? "public, max-age=31536000, immutable" : "no-cache", "X-Content-Type-Options": "nosniff" });
     res.end(buf);
   });
 }
@@ -345,24 +392,32 @@ function servePage(req, res, url) {
   let pathname;
   try { pathname = decodeURIComponent(url.pathname); } catch { return send(res, 400, "Bad request"); }
   if (pathname === "/") {
-    const lang = seo.pickLanguage(req.headers["accept-language"]);
-    res.writeHead(302, { Location: `/${lang}`, Vary: "Accept-Language" }); return res.end();
+    // saved country decides the language; otherwise the browser language
+    const saved = countries.list().find((c) => c.code === countries.cookie(req, "country").toUpperCase());
+    const lang = saved ? saved.lang : seo.pickLanguage(req.headers["accept-language"]);
+    res.writeHead(302, { Location: `/${lang}`, Vary: "Accept-Language, Cookie" }); return res.end();
   }
-  if (pathname === "/sitemap.xml") return send(res, 200, seo.sitemap(products()), { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+  if (pathname === "/sitemap.xml") return send(res, 200, seo.sitemap(catalog.list()), { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" });
   if (pathname === "/robots.txt") return send(res, 200, seo.robots(), { "Cache-Control": "public, max-age=3600" });
   if (/\.\w{2,5}$/.test(pathname) || pathname === "/admin") return serveStatic(req, res, pathname);
   if (pathname.length > 1 && pathname.endsWith("/")) { res.writeHead(301, { Location: pathname.replace(/\/+$/, "") + url.search }); return res.end(); }
-  const list = products();
-  let route = seo.resolve(pathname, list);
+  const all = catalog.list();
+  let route = seo.resolve(pathname, all);
   if (!route) {
     // old or language-less links like /shop → send them to the visitor's language
     const lang = seo.pickLanguage(req.headers["accept-language"]);
-    const guess = seo.resolve(`/${lang}${pathname}`, list);
+    const guess = seo.resolve(`/${lang}${pathname}`, all);
     if (guess && guess.page !== "404") { res.writeHead(301, { Location: `/${lang}${pathname}${url.search}` }); return res.end(); }
     route = { lang, page: "404" };
   }
-  const html = seo.renderPage(route, list);
-  res.writeHead(route.page === "404" ? 404 : 200, { "Content-Type": "text/html; charset=utf-8", "Content-Language": route.lang, "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
+  const dict = seo.dictFor(route.lang, seoOverrides());
+  const country = countries.publicCountry(countries.pick(req, route.lang));
+  const html = seo.renderPage(route, {
+    dict, country,
+    countries: countries.list().map(countries.publicCountry),
+    products: all.map((p) => catalog.localize(p, route.lang, dict.productDesc))
+  });
+  res.writeHead(route.page === "404" ? 404 : 200, { "Content-Type": "text/html; charset=utf-8", "Content-Language": route.lang, "Cache-Control": "no-cache", Vary: "Cookie", "X-Content-Type-Options": "nosniff" });
   res.end(req.method === "HEAD" ? undefined : html);
 }
 
@@ -389,8 +444,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) {
+  catalog.all(); countries.all(); // create/upgrade the database on start
   server.listen(PORT, () => {
-    console.log(`\n  STORE is running →  http://localhost:${PORT}   (${seo.CODES.length} languages)`);
+    console.log(`\n  STORE is running →  http://localhost:${PORT}   (${seo.CODES.length} languages, ${countries.list().length} countries)`);
     console.log(`  Admin panel      →  http://localhost:${PORT}/admin`);
     console.log(`  AI try-on        →  ${GEMINI_API_KEY ? "enabled" : "disabled (add GEMINI_API_KEY to .env)"}`);
     if (!process.env.ADMIN_PASSWORD) console.log("  ⚠  Using default admin password 'admin123' — set ADMIN_PASSWORD in .env");

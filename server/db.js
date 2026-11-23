@@ -40,4 +40,4 @@ function save() {
 process.on("exit", () => { if (timer) writeNow(); });
 ["SIGINT", "SIGTERM"].forEach((s) => process.on(s, () => { if (timer) writeNow(); process.exit(0); }));
 
-module.exports = { load, save, writeNow, FILE };
+module.exports = { load, save, writeNow, FILE, DATA_DIR };

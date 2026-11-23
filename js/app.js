@@ -21,8 +21,19 @@
   const SITE = window.SITE || { lang: "en", dir: "ltr", bcp47: "en", langs: [{ code: "en", name: "English" }], dict: {} };
   lang = SITE.lang;
   const t = (k) => SITE.dict[k] ?? k;
-  const name = (p) => t("p" + p.id);
-  const money = (n) => new Intl.NumberFormat(SITE.bcp47, { style: "currency", currency: "USD", minimumFractionDigits: Number.isInteger(+n) ? 0 : 2 }).format(n);
+  const name = (p) => p.name || t("p" + p.id);
+  window.PRODUCTS = SITE.products || window.PRODUCTS || [];
+  window.CATEGORIES = ["tshirts", "hoodies", "jackets", "pants", "shirts", "shoes", "hats"];
+  const HERO_IMG = "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=1400&q=80";
+  const COUNTRIES = SITE.countries || [];
+  let COUNTRY = SITE.country || { code: "US", currency: "USD", rate: 1, decimals: 2, standard: 0, express: 0, freeOver: null, cod: false, standardDays: "", expressDays: "" };
+  const regionName = (code) => { try { return new Intl.DisplayNames([SITE.bcp47], { type: "region" }).of(code); } catch { return code; } };
+  const flag = (code) => `<img class="flag-img" src="https://flagcdn.com/w40/${code.toLowerCase()}.png" alt="" width="20" height="15" loading="lazy">`;
+  const pick = (i) => PRODUCTS[i % Math.max(1, PRODUCTS.length)];
+  // fmt: an amount already in the country currency; money: a USD catalog price shown in the visitor's currency
+  const fmt = (n, cur = COUNTRY.currency, dec = COUNTRY.decimals) => new Intl.NumberFormat(SITE.bcp47, { style: "currency", currency: cur, minimumFractionDigits: Number.isInteger(+n) ? 0 : dec, maximumFractionDigits: dec }).format(n);
+  const local = (usd) => { const f = 10 ** COUNTRY.decimals; return Math.round(usd * COUNTRY.rate * f) / f; };
+  const money = (usd) => fmt(local(usd));
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const link = (path = "") => `/${lang}${path ? "/" + path : ""}`;
   const two = (thin, bold, tag = "h2") => `<${tag} class="two"><span>${t(thin)}</span> <b>${t(bold)}</b></${tag}>`;
@@ -104,6 +115,10 @@
           </nav>
           <a href="${link()}" class="logo">STORE</a>
           <div class="actions">
+            <details class="lang-menu country-menu">
+              <summary class="pill lang" aria-label="${t("shipTo")}">${flag(COUNTRY.code)}<span>${COUNTRY.currency}</span></summary>
+              <div class="lang-list country-list"><p class="menu-title">${t("shipTo")}</p>${COUNTRIES.map((c) => `<a href="/${c.lang}${route}" data-country="${c.code}" class="${c.code === COUNTRY.code ? "on" : ""}">${flag(c.code)}<span>${esc(regionName(c.code))}</span><small>${c.currency}</small></a>`).join("")}</div>
+            </details>
             <details class="lang-menu">
               <summary class="pill lang" aria-label="${t("language")}">${I.globe}<span>${cur.code.toUpperCase()}</span></summary>
               <div class="lang-list">${SITE.langs.map((l) => `<a href="/${l.code}${route}" hreflang="${l.code}" lang="${l.code}" class="${l.code === lang ? "on" : ""}" data-lang>${l.name}</a>`).join("")}</div>
@@ -148,7 +163,8 @@
 
   // ---------- pages ----------
   function home() {
-    const edits = [9, 10, 8].map((id) => PRODUCTS.find((p) => p.id === id));
+    if (!PRODUCTS.length) return notFound();
+    const edits = [8, 9, 7].map(pick);
     const fresh = PRODUCTS.filter((p) => p.isNew).slice(0, 2);
     const best = [...PRODUCTS].sort((a, b) => b.rating - a.rating).slice(0, 8);
     return `
@@ -167,7 +183,7 @@
       </div>
       <div class="features">
         ${[["truck", 1], ["refresh", 2], ["shield", 3], ["badge", 4]].map(([ic, i]) => `
-          <div class="feature"><span class="ficon">${I[ic]}</span><div><strong>${t("f" + i + "t")}</strong><small>${t("f" + i + "d")}</small></div></div>`).join("")}
+          <div class="feature"><span class="ficon">${I[ic]}</span><div><strong>${t("f" + i + "t")}</strong><small>${i === 1 ? freeText() : t("f" + i + "d")}</small></div></div>`).join("")}
       </div>
     </section>
 
@@ -186,8 +202,8 @@
 
     <section class="wrap section">
       <div class="arrivals">
-        <a class="drop-card reveal" href="${link("product/1")}">
-          <img src="${PRODUCTS[0].img.replace("w=800", "w=1200")}" alt="" loading="lazy">
+        <a class="drop-card reveal" href="${link("product/" + pick(0).id)}">
+          <img src="${pick(0).img.replace("w=800", "w=1200")}" alt="" loading="lazy">
           <div class="drop-text">${kicker("justDropped")}${two("springThin", "springBold", "h3")}</div>
         </a>
         <div class="arrivals-side">
@@ -202,7 +218,7 @@
       <div class="head reveal"><div>${kicker("catKicker")}${two("catThin", "catBold")}</div><a class="more" href="${link("shop")}">${t("viewAll")} ${I.arrow}</a></div>
       <div class="cats">
         ${CATEGORIES.map((c) => `
-          <a class="cat reveal" href="${link("category/" + c)}"><div class="cat-img"><img src="${PRODUCTS.find((p) => p.cat === c).img}" alt="" loading="lazy"></div><span>${t(c)}</span></a>`).join("")}
+          <a class="cat reveal" href="${link("category/" + c)}"><div class="cat-img"><img src="${(PRODUCTS.find((p) => p.cat === c) || pick(0)).img}" alt="" loading="lazy"></div><span>${t(c)}</span></a>`).join("")}
       </div>
     </section>
 
@@ -215,7 +231,7 @@
       <div class="promo reveal">
         <div>${kicker("promoKicker")}<h2 class="two"><span>${t("promoThin")}</span> <b>${t("promoBold")}</b></h2><p>${t("promoText")}</p>
         <a class="btn" href="${link("shop?sale=1")}">${t("shopNow")} ${I.arrow}</a></div>
-        <img src="${PRODUCTS[7].img}" alt="" loading="lazy">
+        <img src="${pick(7).img}" alt="" loading="lazy">
       </div>
     </section>
 
@@ -272,7 +288,7 @@
         <h1>${name(p)}</h1>
         <div class="rating-line">${I.star.repeat(Math.round(p.rating))} <span>${p.rating}</span></div>
         <div class="price big">${money(p.price)} ${p.oldPrice ? `<s>${money(p.oldPrice)}</s>` : ""}</div>
-        <p class="muted">${t("productDesc")}</p>
+        <p class="muted">${esc(p.desc || t("productDesc"))}</p>
         ${p.stock === 0 ? `<p class="stock-note out">${t("outOfStock")}</p>` : p.stock !== undefined && p.stock <= 5 ? `<p class="stock-note">${t("onlyLeft").replace("{n}", p.stock)}</p>` : ""}
         <label class="label">${t("size")}</label>
         <div class="sizes">${sizes.map((s, i) => `<button class="size ${i === 1 ? "active" : ""}" data-size="${s}">${s}</button>`).join("")}</div>
@@ -283,7 +299,7 @@
           <button class="round big-heart hanger" data-try="${p.id}" title="${t("frTry")}">${I.hanger}</button>
           <button class="round big-heart heart ${wish.includes(p.id) ? "on" : ""}" data-wish="${p.id}">${I.heart}</button>
         </div>
-        <ul class="perks"><li>${I.truck}${t("f1d")}</li><li>${I.refresh}${t("f2d")}</li><li>${I.shield}${t("f3d")}</li></ul>
+        <ul class="perks"><li>${I.truck}${freeText()}</li><li>${I.refresh}${t("f2d")}</li><li>${I.shield}${t("f3d")}</li></ul>
       </div>
     </section>
     <section class="wrap section">
@@ -295,8 +311,8 @@
   function cartPage() {
     const items = cart.map((i) => ({ ...i, p: PRODUCTS.find((p) => p.id === i.id) })).filter((i) => i.p);
     if (!items.length) return `<section class="wrap section"><div class="panel empty-cart"><span class="big-icon">${I.bag}</span><h1 class="two"><b>${t("yourCart")}</b></h1><p class="muted">${t("emptyCart")}</p><a class="btn" href="${link("shop")}">${t("continueShopping")} ${I.arrow}</a></div></section>`;
-    const sub = items.reduce((s, i) => s + i.p.price * i.qty, 0);
-    const ship = sub >= 75 ? 0 : 9;
+    const sub = items.reduce((s, i) => s + local(i.p.price) * i.qty, 0);
+    const ship = COUNTRY.freeOver !== null && COUNTRY.freeOver !== undefined && sub >= COUNTRY.freeOver ? 0 : COUNTRY.standard;
     return `
     <section class="wrap section tight">
       <h1 class="two"><b>${t("yourCart")}</b></h1>
@@ -311,9 +327,9 @@
           </div>`).join("")}
         </div>
         <aside class="panel summary">
-          <div><span>${t("subtotal")}</span><span>${money(sub)}</span></div>
-          <div><span>${t("shippingFee")}</span><span>${ship ? money(ship) : t("free")}</span></div>
-          <div class="total"><span>${t("total")}</span><span>${money(sub + ship)}</span></div>
+          <div><span>${t("subtotal")}</span><span>${fmt(sub)}</span></div>
+          <div><span>${t("shippingFee")} · ${flag(COUNTRY.code)} ${esc(regionName(COUNTRY.code))}</span><span>${ship ? fmt(ship) : t("free")}</span></div>
+          <div class="total"><span>${t("total")}</span><span>${fmt(sub + ship)}</span></div>
           <a class="btn full" href="${link("checkout")}">${t("checkout")} ${I.arrow}</a>
           <a class="muted center" href="${link("shop")}">${t("continueShopping")}</a>
         </aside>
@@ -324,7 +340,7 @@
   function about() {
     return `
     <section class="wrap"><div class="page-head">${kicker("company")}<h1 class="two"><b>${t("aboutTitle")}</b></h1></div></section>
-    <section class="wrap section tight"><div class="panel about"><img src="${PRODUCTS[8].img}" alt=""><p>${t("aboutText")}</p></div></section>`;
+    <section class="wrap section tight"><div class="panel about"><img src="${pick(8).img}" alt=""><p>${t("aboutText")}</p></div></section>`;
   }
 
   function contact() {
@@ -338,6 +354,11 @@
     </form></section>`;
   }
 
+  function freeText() { return COUNTRY.freeOver ? t("freeOverX").replace("{amount}", fmt(COUNTRY.freeOver)) : `${regionName(COUNTRY.code)} · ${t("standard")} ${fmt(COUNTRY.standard)}`; }
+  function setCountry(code) {
+    try { document.cookie = `country=${code}; path=/; max-age=31536000; SameSite=Lax`; } catch {}
+  }
+
   // ---------- checkout ----------
   function field(name, label, type = "text", attrs = "") {
     return `<label class="fl"><span>${label}</span><input class="field" name="${name}" type="${type}" ${attrs}><small class="err" data-err="${name}"></small></label>`;
@@ -348,7 +369,8 @@
     const radio = (group, val, title, desc, extra = "") => `
       <label class="opt"><input type="radio" name="${group}" value="${val}" ${checkout[group] === val ? "checked" : ""}>
         <span class="opt-body"><b>${title}</b><small>${desc}</small></span>${extra}</label>`;
-    const ship = API.config?.shipping || { standard: { price: 9, freeOver: 75, days: "3-5" }, express: { price: 19, days: "1-2" } };
+    if (!COUNTRY.cod && checkout.payment === "cod") checkout.payment = "bank";
+    const countrySelect = `<label class="fl"><span>${t("country")}</span><select class="field" name="countrySel" autocomplete="country">${COUNTRIES.map((c) => `<option value="${c.code}" ${c.code === COUNTRY.code ? "selected" : ""}>${esc(regionName(c.code))}</option>`).join("")}</select></label>`;
     return `
     <section class="wrap section tight">
       <h1 class="two"><b>${t("checkoutTitle")}</b></h1>
@@ -363,20 +385,20 @@
           <div class="panel">
             <h3 class="co-h">2. ${t("shippingAddress")}</h3>
             ${field("address", t("address"), "text", 'autocomplete="street-address" required')}
-            <div class="row3">${field("city", t("city"), "text", 'autocomplete="address-level2" required')}${field("country", t("country"), "text", 'autocomplete="country-name" required')}${field("postal", t("postal"), "text", 'autocomplete="postal-code"')}</div>
+            <div class="row3">${field("city", t("city"), "text", 'autocomplete="address-level2" required')}${countrySelect}${field("postal", t("postal"), "text", 'autocomplete="postal-code"')}</div>
             <label class="fl"><span>${t("notes")}</span><textarea class="field" name="notes" rows="2"></textarea></label>
           </div>
           <div class="panel">
             <h3 class="co-h">3. ${t("shippingMethod")}</h3>
             <div class="opts">
-              ${radio("shipping", "standard", t("standard"), `${ship.standard.days} ${t("days")}`, `<em>${money(ship.standard.price)}</em>`)}
-              ${radio("shipping", "express", t("express"), `${ship.express.days} ${t("days")}`, `<em>${money(ship.express.price)}</em>`)}
+              ${radio("shipping", "standard", t("standard"), `${COUNTRY.standardDays} ${t("days")}${COUNTRY.freeOver ? " · " + freeText() : ""}`, `<em>${COUNTRY.standard ? fmt(COUNTRY.standard) : t("free")}</em>`)}
+              ${radio("shipping", "express", t("express"), `${COUNTRY.expressDays} ${t("days")}`, `<em>${COUNTRY.express ? fmt(COUNTRY.express) : t("free")}</em>`)}
             </div>
           </div>
           <div class="panel">
             <h3 class="co-h">4. ${t("paymentMethod")}</h3>
             <div class="opts">
-              ${radio("payment", "cod", t("cod"), t("codDesc"), "<em>💵</em>")}
+              ${COUNTRY.cod ? radio("payment", "cod", t("cod"), t("codDesc"), "<em>💵</em>") : ""}
               ${radio("payment", "bank", t("bank"), t("bankDesc"), "<em>🏦</em>")}
             </div>
           </div>
@@ -404,17 +426,18 @@
       box.innerHTML = `<div class="sum-row"><span>${t("subtotal")}</span><span>${money(sub)}</span></div>`; return;
     }
     try {
-      const q = await api("/api/quote", { body: { items: cart, coupon: checkout.coupon, shipping: checkout.shipping } });
+      const q = await api("/api/quote", { body: { items: cart, coupon: checkout.coupon, shipping: checkout.shipping, country: COUNTRY.code } });
+      const m = (n) => fmt(n, q.currency, q.decimals);
       checkout.quote = q;
       box.innerHTML = `
-        <div class="sum-lines">${q.lines.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(t("p" + l.id))}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}</div>
-        <div class="sum-row"><span>${t("subtotal")}</span><span>${money(q.subtotal)}</span></div>
-        ${q.discount ? `<div class="sum-row disc"><span>${t("discount")} (${q.coupon})</span><span>−${money(q.discount)}</span></div>` : ""}
-        <div class="sum-row"><span>${t("shippingFee")}</span><span>${q.shipping ? money(q.shipping) : t("free")}</span></div>
-        <div class="sum-row total"><span>${t("total")}</span><span>${money(q.total)}</span></div>`;
+        <div class="sum-lines">${q.lines.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(pname(l))}<small class="muted">${esc(l.size)}</small></span><span>${m(l.total)}</span></div>`).join("")}</div>
+        <div class="sum-row"><span>${t("subtotal")}</span><span>${m(q.subtotal)}</span></div>
+        ${q.discount ? `<div class="sum-row disc"><span>${t("discount")} (${q.coupon})</span><span>−${m(q.discount)}</span></div>` : ""}
+        <div class="sum-row"><span>${t("shippingFee")}</span><span>${q.shipping ? m(q.shipping) : t("free")}</span></div>
+        <div class="sum-row total"><span>${t("total")}</span><span>${m(q.total)}</span></div>`;
       if (msg) {
         msg.className = q.couponError ? "err" : "ok";
-        msg.textContent = q.couponError === "invalid" ? t("couponBad") : q.couponError === "min" ? `${t("couponMin")} ${money(q.couponMin)}` : q.coupon ? `✓ ${t("couponOk")}` : "";
+        msg.textContent = q.couponError === "invalid" ? t("couponBad") : q.couponError === "min" ? `${t("couponMin")} ${m(q.couponMin)}` : q.coupon ? `✓ ${t("couponOk")}` : "";
       }
     } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   }
@@ -424,16 +447,16 @@
     form.querySelectorAll("[data-err]").forEach((el) => (el.textContent = ""));
     form.querySelectorAll(".field.bad").forEach((el) => el.classList.remove("bad"));
     let bad = false;
-    ["name", "phone", "email", "address", "city", "country"].forEach((k) => {
+    ["name", "phone", "email", "address", "city"].forEach((k) => {
       const v = (fd[k] || "").trim();
       const wrong = !v ? "required" : k === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? "invalid" : k === "phone" && !/^[+\d][\d\s\-()]{6,}$/.test(v) ? "invalid" : "";
       if (wrong) { bad = true; form.querySelector(`[data-err="${k}"]`).textContent = t(wrong); form.querySelector(`[name="${k}"]`).classList.add("bad"); }
     });
     if (bad) return form.querySelector(".field.bad").focus();
     const btn = $("#placeBtn"); btn.disabled = true; btn.textContent = t("placing");
-    const customer = { name: fd.name, email: fd.email, phone: fd.phone, address: fd.address, city: fd.city, country: fd.country, postal: fd.postal };
+    const customer = { name: fd.name, email: fd.email, phone: fd.phone, address: fd.address, city: fd.city, postal: fd.postal };
     try {
-      const order = await api("/api/orders", { body: { customer, notes: fd.notes, items: cart, shipping: checkout.shipping, payment: checkout.payment, coupon: checkout.coupon } });
+      const order = await api("/api/orders", { body: { customer, notes: fd.notes, items: cart, shipping: checkout.shipping, payment: checkout.payment, coupon: checkout.coupon, country: COUNTRY.code, lang } });
       store.set("customer", customer);
       store.set("lastOrder", { number: order.number, email: order.customer.email });
       cart = []; saveCart(); checkout.coupon = "";
@@ -446,6 +469,7 @@
     }
   }
 
+  const pname = (l) => { const p = PRODUCTS.find((x) => x.id === l.id); return p ? name(p) : l.name; };
   function orderPage() { return `<section class="wrap section tight"><div id="orderBox" class="panel"><div class="skeleton"></div></div></section>`; }
 
   async function loadOrder(number, email, isNew) {
@@ -453,6 +477,7 @@
     try {
       const o = await api(`/api/orders/${encodeURIComponent(number)}?email=${encodeURIComponent(email)}`);
       const steps = ["pending", "confirmed", "shipped", "delivered"];
+      const m = (n) => fmt(n, o.currency || "USD", o.decimals ?? 2);
       const cur = steps.indexOf(o.status);
       box.innerHTML = `
         <div class="order-head">
@@ -462,7 +487,7 @@
           <div><small>${t("orderNo")}</small><b>${esc(o.number)}</b></div>
           <div><small>${t("placedOn")}</small><b>${new Date(o.createdAt).toLocaleDateString(SITE.bcp47, { day: "numeric", month: "short", year: "numeric" })}</b></div>
           <div><small>${t("payment")}</small><b>${t(o.payment)}</b></div>
-          <div><small>${t("total")}</small><b class="price">${money(o.total)}</b></div>
+          <div><small>${t("total")}</small><b class="price">${m(o.total)}</b></div>
         </div>
         ${o.status === "cancelled" ? `<p class="notice">${t("status")}: ${t("cancelled")}</p>` : `
         <ol class="timeline">${steps.map((s, i) => `<li class="${i <= cur ? "done" : ""}"><span></span>${t(s)}</li>`).join("")}</ol>`}
@@ -470,11 +495,11 @@
           <div><small>${t("bankName")}</small><b>${esc(o.bank.bank)}</b></div><div><small>${t("accTitle")}</small><b>${esc(o.bank.title)}</b></div>
           <div><small>${t("iban")}</small><b>${esc(o.bank.iban)}</b></div><p class="muted">${t("bankRef")}</p></div>` : ""}
         <div class="order-cols">
-          <div><h3 class="co-h">${t("items")}</h3>${o.items.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(t("p" + l.id))}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}
-            <div class="sum-row"><span>${t("subtotal")}</span><span>${money(o.subtotal)}</span></div>
-            ${o.discount ? `<div class="sum-row disc"><span>${t("discount")}</span><span>−${money(o.discount)}</span></div>` : ""}
-            <div class="sum-row"><span>${t("shippingFee")} · ${t(o.shippingMethod)}</span><span>${o.shipping ? money(o.shipping) : t("free")}</span></div>
-            <div class="sum-row total"><span>${t("total")}</span><span>${money(o.total)}</span></div></div>
+          <div><h3 class="co-h">${t("items")}</h3>${o.items.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(pname(l))}<small class="muted">${esc(l.size)}</small></span><span>${m(l.total)}</span></div>`).join("")}
+            <div class="sum-row"><span>${t("subtotal")}</span><span>${m(o.subtotal)}</span></div>
+            ${o.discount ? `<div class="sum-row disc"><span>${t("discount")}</span><span>−${m(o.discount)}</span></div>` : ""}
+            <div class="sum-row"><span>${t("shippingFee")} · ${t(o.shippingMethod)}</span><span>${o.shipping ? m(o.shipping) : t("free")}</span></div>
+            <div class="sum-row total"><span>${t("total")}</span><span>${m(o.total)}</span></div></div>
           <div><h3 class="co-h">${t("deliverTo")}</h3><p>${esc(o.customer.name)}<br>${esc(o.customer.address)}<br>${esc(o.customer.city)}, ${esc(o.customer.country)}<br><span class="muted">${esc(o.customer.email)}</span></p></div>
         </div>
         <div class="btns"><a class="btn" href="${link("shop")}">${t("continueShopping")} ${I.arrow}</a><a class="btn ghost" href="${link("track")}">${t("track")}</a></div>`;
@@ -583,6 +608,11 @@
   document.addEventListener("change", (e) => {
     if (e.target.matches("[data-sort]")) setParam("sort", e.target.value);
     if (e.target.name === "shipping") { checkout.shipping = e.target.value; refreshQuote(); }
+    if (e.target.name === "countrySel") {
+      const c = COUNTRIES.find((x) => x.code === e.target.value); if (!c) return;
+      const f = $("#checkoutForm"); store.set("customer", { ...store.get("customer", {}), ...Object.fromEntries([...new FormData(f)].filter(([k]) => ["name", "phone", "email", "address", "city", "postal", "notes"].includes(k))) });
+      setCountry(c.code); COUNTRY = c; render();
+    }
     if (e.target.name === "payment") checkout.payment = e.target.value;
   });
   let st;
@@ -611,6 +641,8 @@
   window.addEventListener("popstate", () => render());
   // client-side navigation for links inside the current language (other languages load a fresh, server-rendered page)
   document.addEventListener("click", (e) => {
+    const cc = e.target.closest("[data-country]");
+    if (cc) { setCountry(cc.dataset.country); if (new URL(cc.href).pathname === location.pathname) { e.preventDefault(); location.reload(); } return; }
     const a = e.target.closest("a[href]");
     if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || a.target || a.hasAttribute("download")) return;
     const url = new URL(a.href, location.href);
@@ -624,9 +656,9 @@
 
   // load live prices/stock from the backend (falls back to js/data.js when opened without the server)
   async function refreshCatalog() {
-    const list = await api("/api/products");
+    const list = await api("/api/products?lang=" + lang);
     const ids = new Set(list.map((p) => p.id));
-    list.forEach((sp) => { const p = PRODUCTS.find((x) => x.id === sp.id); if (p) Object.assign(p, { price: sp.price, oldPrice: sp.oldPrice ?? undefined, stock: sp.stock }); });
+    list.forEach((sp) => { const p = PRODUCTS.find((x) => x.id === sp.id); if (p) Object.assign(p, sp); else PRODUCTS.push(sp); });
     for (let i = PRODUCTS.length - 1; i >= 0; i--) if (!ids.has(PRODUCTS[i].id)) PRODUCTS.splice(i, 1);
     cart = cart.filter((i) => ids.has(i.id)); saveCart();
   }

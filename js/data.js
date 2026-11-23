@@ -1,4 +1,4 @@
-// Product catalog (names and all text live in /i18n/<lang>.json)
+// Seed catalog: used once to fill the database on first start. Manage products in Admin → Products.
 const IMG = (id, w = 800) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&q=80`;
 
 window.HERO_IMG = IMG("photo-1489987707025-afc232f7ea0f", 1400);

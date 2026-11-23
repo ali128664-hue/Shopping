@@ -204,5 +204,7 @@
   "p13": "Stone Slim Chinos",
   "p14": "Merino Knit Crewneck",
   "p15": "Wool Felt Fedora",
-  "p16": "Court Runner Sneakers"
+  "p16": "Court Runner Sneakers",
+  "freeOverX": "On orders over {amount}",
+  "shipTo": "Ship to"
 }

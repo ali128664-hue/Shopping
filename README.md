@@ -28,6 +28,18 @@ Orders, stock changes, messages and subscribers are saved in `data/db.json`.
 - Set `SITE_URL` in `.env` to your real domain before going live, then submit `https://your-domain/sitemap.xml` in Google Search Console
 - Translations live in `i18n/<code>.json`; add a language by adding a file and a line in `i18n/languages.json`
 
+**Countries & currencies**
+- Pakistan, UK, USA, UAE, Saudi Arabia, Italy, Germany, Oman, Iran and Turkey to start with — add more in Admin → Countries & Shipping
+- The customer picks a country (flag menu in the header): the site switches to that country's language and shows prices in its currency
+- Per country: default language, currency, exchange rate (1 USD = …), standard/express shipping price and days, free-shipping limit, cash on delivery on/off
+- Product prices are kept in USD and converted; orders are saved in the customer's currency (with the USD value for reports)
+- ⚠ The starting exchange rates are examples — set real rates before going live
+
+**Admin**
+- Products: add, edit, hide or delete; upload images; name, description and SEO title/description in all 17 languages
+- SEO: edit page titles and descriptions per language, with a Google preview
+- Orders (with country and currency), sales by country, low stock, messages, CSV export
+
 **Store**
 - Home: hero, features, curated edits, new arrivals, categories, best sellers, promo, testimonials, newsletter
 - Shop with category filter, search, sorting; product pages with size, quantity, stock warnings
