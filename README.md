@@ -1,26 +1,60 @@
 # STORE — Premium Menswear E-commerce
 
-A responsive, bilingual (English / Arabic with RTL) fashion store front-end, with a clean, light, card-based design.
+A complete bilingual (English / Arabic RTL) fashion store with checkout, order tracking, an admin panel and an AI fitting room.
+The backend is plain Node.js, so there is nothing to `npm install`.
 
-## Features
-- Home: hero, features strip, shop-by-category, featured products, promo banner, newsletter
-- Shop: category filters, search, price sorting
-- Product page: size & quantity selection, related products
-- Cart: quantity update, remove, subtotal / free shipping over $75 (saved in localStorage)
-- About & Contact pages
-- Fitting room: tap the hanger on any product to dress the mannequin; add your own Google Gemini API key for a realistic AI try-on (key stays in your browser, or put it in a local `js/config.js` — see `js/config.example.js`; that file is git-ignored)
-- Search popup (Ctrl+K), wishlist, English ⇄ Arabic (RTL), light / dark mode, mobile menu
+## Run it
 
-## Tech
-Plain HTML, CSS and JavaScript — no build step, no dependencies.
+1. Install Node.js 18 or newer from https://nodejs.org
+2. Copy `.env.example` to `.env` and set at least `ADMIN_PASSWORD` (and `GEMINI_API_KEY` for the AI fitting room)
+3. In this folder run:
 
-## Run locally
 ```bash
-python3 -m http.server 8000
-# open http://localhost:8000/#/en
+node server.js
 ```
 
-## Deploy
-Works as-is on GitHub Pages, Netlify or Vercel (static site). Product data lives in `js/data.js`.
+4. Open the store at http://localhost:3000 and the admin panel at http://localhost:3000/admin
 
-Images are from Unsplash.
+Orders, stock changes, messages and subscribers are saved in `data/db.json`.
+
+## Features
+
+**Store**
+- Home: hero, features, curated edits, new arrivals, categories, best sellers, promo, testimonials, newsletter
+- Shop with category filter, search, sorting; product pages with size, quantity, stock warnings
+- Cart (saved in the browser), wishlist, search popup (Ctrl+K), dark mode, English ⇄ Arabic (RTL)
+- Fitting room: tap the hanger on a product to dress the mannequin; “Generate realistic look” uses Google Gemini through the server (the key never reaches the browser)
+
+**Checkout**
+- Contact + shipping address form with validation
+- Standard / express shipping (standard is free over $75)
+- Cash on delivery or bank transfer (bank details come from `.env`)
+- Coupons: `WELCOME10` (10% off), `SAVE20` ($20 off orders over $150), `FREESHIP`
+- Prices, discounts, shipping and stock are always calculated on the server
+- Order confirmation page and order tracking (order number + email)
+
+**Admin panel** (`/admin`)
+- Dashboard: revenue, today’s sales, 14-day chart, top products, low stock, unread messages
+- Orders: filter by status, search, change status (cancelling returns stock), order details, CSV export
+- Products: edit price, sale price, stock, show/hide
+- Contact messages and newsletter subscribers
+
+## API
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/config` | Shipping, payment and AI settings |
+| GET | `/api/products` | Products with live price and stock |
+| POST | `/api/quote` | Totals for a cart, coupon and shipping method |
+| POST | `/api/orders` | Place an order |
+| GET | `/api/orders/:number?email=` | Track an order |
+| POST | `/api/contact`, `/api/newsletter` | Contact form, newsletter |
+| POST | `/api/tryon` | AI fitting room (needs `GEMINI_API_KEY`) |
+| * | `/api/admin/...` | Admin endpoints (login required) |
+
+## Notes
+
+- `.env`, `data/` and `js/config.js` are git-ignored — never commit keys or customer data.
+- Opening `index.html` directly (without the server) still shows the store, but orders need the server.
+- Online card payments (e.g. Stripe) and order emails are not included yet.
+- Product data lives in `js/data.js`; images are from Unsplash.

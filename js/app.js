@@ -7,12 +7,21 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
   };
   let cart = store.get("cart", []);
+  const API = { ok: false, config: null };
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { method: opts.method || (opts.body ? "POST" : "GET"), headers: { "Content-Type": "application/json" }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(j.error || "Request failed"); e.fields = j.fields; e.status = r.status; throw e; }
+    return j;
+  }
+  const checkout = { coupon: "", shipping: "standard", payment: "cod", quote: null };
   let wish = store.get("wish", []);
   let lang = "en";
   window.STORE = { t: (k) => t(k), get lang() { return lang; }, toast: (m) => toast(m), icons: null };
   const t = (k) => I18N[lang][k] ?? k;
   const name = (p) => p[lang];
-  const money = (n) => "$" + n;
+  const money = (n) => "$" + (Number.isInteger(+n) ? +n : (+n).toFixed(2));
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const link = (path = "") => `#/${lang}${path ? "/" + path : ""}`;
   const two = (thin, bold, tag = "h2") => `<${tag} class="two"><span>${t(thin)}</span> <b>${t(bold)}</b></${tag}>`;
   const kicker = (k) => `<span class="kicker">${t(k)}</span>`;
@@ -40,6 +49,9 @@
   // ---------- cart ----------
   function saveCart() { store.set("cart", cart); updateCounts(); }
   function addToCart(id, size = "M", qty = 1) {
+    const prod = PRODUCTS.find((x) => x.id === id);
+    const inCart = cart.filter((i) => i.id === id).reduce((s, i) => s + i.qty, 0);
+    if (prod && prod.stock !== undefined && inCart + qty > prod.stock) return toast(prod.stock - inCart > 0 ? t("onlyLeft").replace("{n}", prod.stock - inCart) : t("outOfStock"));
     const item = cart.find((i) => i.id === id && i.size === size);
     item ? (item.qty += qty) : cart.push({ id, size, qty });
     saveCart(); toast(t("added"));
@@ -62,13 +74,13 @@
       <button class="round heart ${liked ? "on" : ""}" data-wish="${p.id}" aria-label="Wishlist">${I.heart}</button>
       <button class="round hanger" data-try="${p.id}" aria-label="${t("frTry")}" title="${t("frTry")}">${I.hanger}</button>
       <span class="rating">${I.star}${p.rating}</span>
-      ${p.isNew ? `<span class="tag">${t("new")}</span>` : ""}
+      ${p.stock === 0 ? `<span class="tag oos">${t("outOfStock")}</span>` : p.isNew ? `<span class="tag">${t("new")}</span>` : ""}
       <div class="pcard-body">
         <div>
           <a href="${link("product/" + p.id)}" class="pname">${name(p)}</a>
           <div class="price">${money(p.price)} ${p.oldPrice ? `<s>${money(p.oldPrice)}</s>` : ""}</div>
         </div>
-        <button class="add" data-add="${p.id}" aria-label="${t("addToCart")}">${I.bagPlus}</button>
+        <button class="add" data-add="${p.id}" aria-label="${t("addToCart")}" ${p.stock === 0 ? "disabled" : ""}>${I.bagPlus}</button>
       </div>
     </article>`;
   }
@@ -121,7 +133,7 @@
       <div class="wrap footer-grid">
         <div><a class="logo" href="${link()}">STORE</a><p>${t("footerText")}</p></div>
         <div><h4>${t("shop")}</h4>${CATEGORIES.slice(0, 5).map((c) => `<a href="${link("shop?cat=" + c)}">${t(c)}</a>`).join("")}</div>
-        <div><h4>${t("help")}</h4><a href="${link("contact")}">${t("shipping")}</a><a href="${link("contact")}">${t("returns")}</a><a href="${link("contact")}">${t("faq")}</a></div>
+        <div><h4>${t("help")}</h4><a href="${link("contact")}">${t("shipping")}</a><a href="${link("contact")}">${t("returns")}</a><a href="${link("contact")}">${t("faq")}</a><a href="${link("track")}">${t("track")}</a></div>
         <div><h4>${t("company")}</h4><a href="${link("about")}">${t("about")}</a><a href="${link("contact")}">${t("contact")}</a><a href="mailto:hello@store.com">hello@store.com</a></div>
       </div>
       <div class="wrap copy">© ${new Date().getFullYear()} STORE. ${t("rights")}</div>
@@ -255,12 +267,13 @@
         <div class="rating-line">${I.star.repeat(Math.round(p.rating))} <span>${p.rating}</span></div>
         <div class="price big">${money(p.price)} ${p.oldPrice ? `<s>${money(p.oldPrice)}</s>` : ""}</div>
         <p class="muted">${t("productDesc")}</p>
+        ${p.stock === 0 ? `<p class="stock-note out">${t("outOfStock")}</p>` : p.stock !== undefined && p.stock <= 5 ? `<p class="stock-note">${t("onlyLeft").replace("{n}", p.stock)}</p>` : ""}
         <label class="label">${t("size")}</label>
         <div class="sizes">${sizes.map((s, i) => `<button class="size ${i === 1 ? "active" : ""}" data-size="${s}">${s}</button>`).join("")}</div>
         <label class="label">${t("qty")}</label>
         <div class="qty"><button data-q="-1">−</button><span id="qtyVal">1</span><button data-q="1">+</button></div>
         <div class="buy-row">
-          <button class="btn grow" data-add-detail="${p.id}" data-default-size="${sizes[1]}">${t("addToCart")} ${I.bag}</button>
+          <button class="btn grow" data-add-detail="${p.id}" data-default-size="${sizes[1]}" ${p.stock === 0 ? "disabled" : ""}>${t("addToCart")} ${I.bag}</button>
           <button class="round big-heart hanger" data-try="${p.id}" title="${t("frTry")}">${I.hanger}</button>
           <button class="round big-heart heart ${wish.includes(p.id) ? "on" : ""}" data-wish="${p.id}">${I.heart}</button>
         </div>
@@ -295,7 +308,7 @@
           <div><span>${t("subtotal")}</span><span>${money(sub)}</span></div>
           <div><span>${t("shippingFee")}</span><span>${ship ? money(ship) : t("free")}</span></div>
           <div class="total"><span>${t("total")}</span><span>${money(sub + ship)}</span></div>
-          <button class="btn full" data-checkout>${t("checkout")} ${I.arrow}</button>
+          <a class="btn full" href="${link("checkout")}">${t("checkout")} ${I.arrow}</a>
           <a class="muted center" href="${link("shop")}">${t("continueShopping")}</a>
         </aside>
       </div>
@@ -319,6 +332,162 @@
     </form></section>`;
   }
 
+  // ---------- checkout ----------
+  function field(name, label, type = "text", attrs = "") {
+    return `<label class="fl"><span>${label}</span><input class="field" name="${name}" type="${type}" ${attrs}><small class="err" data-err="${name}"></small></label>`;
+  }
+  function checkoutPage() {
+    if (!cart.length) return cartPage();
+    const saved = store.get("customer", {});
+    const radio = (group, val, title, desc, extra = "") => `
+      <label class="opt"><input type="radio" name="${group}" value="${val}" ${checkout[group] === val ? "checked" : ""}>
+        <span class="opt-body"><b>${title}</b><small>${desc}</small></span>${extra}</label>`;
+    const ship = API.config?.shipping || { standard: { price: 9, freeOver: 75, days: "3-5" }, express: { price: 19, days: "1-2" } };
+    return `
+    <section class="wrap section tight">
+      <h1 class="two"><b>${t("checkoutTitle")}</b></h1>
+      ${API.ok ? "" : `<p class="notice">${t("serverOff")}</p>`}
+      <form class="checkout-layout" id="checkoutForm" novalidate>
+        <div class="co-main">
+          <div class="panel">
+            <h3 class="co-h">1. ${t("contactInfo")}</h3>
+            <div class="row2">${field("name", t("fullName"), "text", 'autocomplete="name" required')}${field("phone", t("phone"), "tel", 'autocomplete="tel" required')}</div>
+            ${field("email", t("email"), "email", 'autocomplete="email" required')}
+          </div>
+          <div class="panel">
+            <h3 class="co-h">2. ${t("shippingAddress")}</h3>
+            ${field("address", t("address"), "text", 'autocomplete="street-address" required')}
+            <div class="row3">${field("city", t("city"), "text", 'autocomplete="address-level2" required')}${field("country", t("country"), "text", 'autocomplete="country-name" required')}${field("postal", t("postal"), "text", 'autocomplete="postal-code"')}</div>
+            <label class="fl"><span>${t("notes")}</span><textarea class="field" name="notes" rows="2"></textarea></label>
+          </div>
+          <div class="panel">
+            <h3 class="co-h">3. ${t("shippingMethod")}</h3>
+            <div class="opts">
+              ${radio("shipping", "standard", t("standard"), `${ship.standard.days} ${t("days")}`, `<em>${money(ship.standard.price)}</em>`)}
+              ${radio("shipping", "express", t("express"), `${ship.express.days} ${t("days")}`, `<em>${money(ship.express.price)}</em>`)}
+            </div>
+          </div>
+          <div class="panel">
+            <h3 class="co-h">4. ${t("paymentMethod")}</h3>
+            <div class="opts">
+              ${radio("payment", "cod", t("cod"), t("codDesc"), "<em>💵</em>")}
+              ${radio("payment", "bank", t("bank"), t("bankDesc"), "<em>🏦</em>")}
+            </div>
+          </div>
+        </div>
+        <aside class="panel summary co-summary">
+          <h3 class="co-h">${t("orderSummary")}</h3>
+          <div id="summaryBox"><div class="skeleton"></div></div>
+          <div class="coupon">
+            <input class="field" id="couponInput" placeholder="${t("coupon")}" value="${esc(checkout.coupon)}">
+            <button type="button" class="btn ghost" data-coupon>${t("apply")}</button>
+          </div>
+          <small id="couponMsg" class="muted"></small>
+          <button class="btn full" id="placeBtn" ${API.ok ? "" : "disabled"}>${t("placeOrder")} ${I.arrow}</button>
+          <small class="muted center">🔒 ${t("secure")}</small>
+        </aside>
+      </form>
+    </section>`;
+  }
+
+  async function refreshQuote() {
+    const box = $("#summaryBox"); if (!box) return;
+    const msg = $("#couponMsg");
+    if (!API.ok) {
+      const sub = cart.reduce((s, i) => s + (PRODUCTS.find((p) => p.id === i.id)?.price || 0) * i.qty, 0);
+      box.innerHTML = `<div class="sum-row"><span>${t("subtotal")}</span><span>${money(sub)}</span></div>`; return;
+    }
+    try {
+      const q = await api("/api/quote", { body: { items: cart, coupon: checkout.coupon, shipping: checkout.shipping } });
+      checkout.quote = q;
+      box.innerHTML = `
+        <div class="sum-lines">${q.lines.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(lang === "ar" ? l.nameAr : l.name)}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}</div>
+        <div class="sum-row"><span>${t("subtotal")}</span><span>${money(q.subtotal)}</span></div>
+        ${q.discount ? `<div class="sum-row disc"><span>${t("discount")} (${q.coupon})</span><span>−${money(q.discount)}</span></div>` : ""}
+        <div class="sum-row"><span>${t("shippingFee")}</span><span>${q.shipping ? money(q.shipping) : t("free")}</span></div>
+        <div class="sum-row total"><span>${t("total")}</span><span>${money(q.total)}</span></div>`;
+      if (msg) {
+        msg.className = q.couponError ? "err" : "ok";
+        msg.textContent = q.couponError === "invalid" ? t("couponBad") : q.couponError === "min" ? `${t("couponMin")} ${money(q.couponMin)}` : q.coupon ? `✓ ${t("couponOk")}` : "";
+      }
+    } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  }
+
+  async function placeOrder(form) {
+    const fd = Object.fromEntries(new FormData(form));
+    form.querySelectorAll("[data-err]").forEach((el) => (el.textContent = ""));
+    form.querySelectorAll(".field.bad").forEach((el) => el.classList.remove("bad"));
+    let bad = false;
+    ["name", "phone", "email", "address", "city", "country"].forEach((k) => {
+      const v = (fd[k] || "").trim();
+      const wrong = !v ? "required" : k === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? "invalid" : k === "phone" && !/^[+\d][\d\s\-()]{6,}$/.test(v) ? "invalid" : "";
+      if (wrong) { bad = true; form.querySelector(`[data-err="${k}"]`).textContent = t(wrong); form.querySelector(`[name="${k}"]`).classList.add("bad"); }
+    });
+    if (bad) return form.querySelector(".field.bad").focus();
+    const btn = $("#placeBtn"); btn.disabled = true; btn.textContent = t("placing");
+    const customer = { name: fd.name, email: fd.email, phone: fd.phone, address: fd.address, city: fd.city, country: fd.country, postal: fd.postal };
+    try {
+      const order = await api("/api/orders", { body: { customer, notes: fd.notes, items: cart, shipping: checkout.shipping, payment: checkout.payment, coupon: checkout.coupon } });
+      store.set("customer", customer);
+      store.set("lastOrder", { number: order.number, email: order.customer.email });
+      cart = []; saveCart(); checkout.coupon = "";
+      location.hash = `#/${lang}/order/${order.number}?email=${encodeURIComponent(order.customer.email)}&new=1`;
+    } catch (e) {
+      toast(e.message);
+      if (e.fields) Object.entries(e.fields).forEach(([k, v]) => { const el = form.querySelector(`[data-err="${k}"]`); if (el) { el.textContent = t(v); form.querySelector(`[name="${k}"]`).classList.add("bad"); } });
+      btn.disabled = false; btn.innerHTML = `${t("placeOrder")} ${I.arrow}`;
+      refreshCatalog().then(refreshQuote);
+    }
+  }
+
+  function orderPage() { return `<section class="wrap section tight"><div id="orderBox" class="panel"><div class="skeleton"></div></div></section>`; }
+
+  async function loadOrder(number, email, isNew) {
+    const box = $("#orderBox"); if (!box) return;
+    try {
+      const o = await api(`/api/orders/${encodeURIComponent(number)}?email=${encodeURIComponent(email)}`);
+      const steps = ["pending", "confirmed", "shipped", "delivered"];
+      const cur = steps.indexOf(o.status);
+      box.innerHTML = `
+        <div class="order-head">
+          ${isNew ? `<span class="big-check">✓</span><h1 class="two"><b>${t("thanks")}</b></h1><p class="muted">${t("orderConfirm")}</p>` : `${kicker("track")}<h1 class="two"><b>${t("orderNo")} ${esc(o.number)}</b></h1>`}
+        </div>
+        <div class="order-meta">
+          <div><small>${t("orderNo")}</small><b>${esc(o.number)}</b></div>
+          <div><small>${t("placedOn")}</small><b>${new Date(o.createdAt).toLocaleDateString(lang === "ar" ? "ar" : "en-GB", { day: "numeric", month: "short", year: "numeric" })}</b></div>
+          <div><small>${t("payment")}</small><b>${t(o.payment)}</b></div>
+          <div><small>${t("total")}</small><b class="price">${money(o.total)}</b></div>
+        </div>
+        ${o.status === "cancelled" ? `<p class="notice">${t("status")}: ${t("cancelled")}</p>` : `
+        <ol class="timeline">${steps.map((s, i) => `<li class="${i <= cur ? "done" : ""}"><span></span>${t(s)}</li>`).join("")}</ol>`}
+        ${o.bank && o.status === "pending" ? `<div class="bank-box"><h3>🏦 ${t("bankDetails")}</h3>
+          <div><small>${t("bankName")}</small><b>${esc(o.bank.bank)}</b></div><div><small>${t("accTitle")}</small><b>${esc(o.bank.title)}</b></div>
+          <div><small>${t("iban")}</small><b>${esc(o.bank.iban)}</b></div><p class="muted">${t("bankRef")}</p></div>` : ""}
+        <div class="order-cols">
+          <div><h3 class="co-h">${t("items")}</h3>${o.items.map((l) => `<div class="sum-line"><span class="sl-img"><img src="${l.img}" alt=""><b>${l.qty}</b></span><span>${esc(lang === "ar" ? l.nameAr : l.name)}<small class="muted">${esc(l.size)}</small></span><span>${money(l.total)}</span></div>`).join("")}
+            <div class="sum-row"><span>${t("subtotal")}</span><span>${money(o.subtotal)}</span></div>
+            ${o.discount ? `<div class="sum-row disc"><span>${t("discount")}</span><span>−${money(o.discount)}</span></div>` : ""}
+            <div class="sum-row"><span>${t("shippingFee")} · ${t(o.shippingMethod)}</span><span>${o.shipping ? money(o.shipping) : t("free")}</span></div>
+            <div class="sum-row total"><span>${t("total")}</span><span>${money(o.total)}</span></div></div>
+          <div><h3 class="co-h">${t("deliverTo")}</h3><p>${esc(o.customer.name)}<br>${esc(o.customer.address)}<br>${esc(o.customer.city)}, ${esc(o.customer.country)}<br><span class="muted">${esc(o.customer.email)}</span></p></div>
+        </div>
+        <div class="btns"><a class="btn" href="${link("shop")}">${t("continueShopping")} ${I.arrow}</a><a class="btn ghost" href="${link("track")}">${t("track")}</a></div>`;
+    } catch (e) {
+      box.innerHTML = `<div class="empty-cart"><h1 class="two"><b>${t("orderNotFound")}</b></h1><p class="muted">${esc(API.ok ? e.message : t("serverOff"))}</p><a class="btn" href="${link("track")}">${t("track")}</a></div>`;
+    }
+  }
+
+  function trackPage() {
+    const last = store.get("lastOrder", {});
+    return `
+    <section class="wrap"><div class="page-head">${kicker("help")}<h1 class="two"><b>${t("trackTitle")}</b></h1><p class="muted">${t("trackText")}</p></div></section>
+    <section class="wrap section tight"><form class="panel contact-form" data-track>
+      <input class="field" name="number" required placeholder="${t("orderNo")} (ST-1001)" value="${esc(last.number || "")}">
+      <input class="field" name="email" type="email" required placeholder="${t("email")}" value="${esc(last.email || "")}">
+      <button class="btn">${t("track")} ${I.arrow}</button>
+    </form></section>`;
+  }
+
   // ---------- router ----------
   let detailSize = null, detailQty = 1;
   function render() {
@@ -331,12 +500,18 @@
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
     document.title = `STORE | ${lang === "ar" ? "متجر أزياء فاخر" : "Premium Fashion Store"}`;
-    const view = { "": home, shop: () => shop(params), product: () => product(arg), cart: cartPage, about, contact }[page] || home;
+    const view = { "": home, shop: () => shop(params), product: () => product(arg), cart: cartPage, about, contact, checkout: checkoutPage, order: orderPage, track: trackPage }[page] || home;
     app.innerHTML = header() + `<main id="main-content">${view()}</main>` + footer();
     window.dispatchEvent(new CustomEvent("store:render"));
     detailSize = $("[data-default-size]")?.dataset.defaultSize || "M"; detailQty = 1;
     updateCounts();
     observe();
+    if (page === "checkout" && cart.length) {
+      const saved = store.get("customer", {}); const f = $("#checkoutForm");
+      Object.entries(saved).forEach(([k, v]) => { const el = f.querySelector(`[name="${k}"]`); if (el) el.value = v; });
+      refreshQuote();
+    }
+    if (page === "order") loadOrder(decodeURIComponent(arg || ""), params.get("email") || "", params.get("new") === "1");
   }
 
   function observe() {
@@ -366,7 +541,7 @@
   document.addEventListener("click", (e) => {
     if (e.target.id === "searchModal") return closeSearch();
     if (e.target.closest(".sr")) closeSearch();
-    const el = e.target.closest("[data-add],[data-add-detail],[data-size],[data-q],[data-cq],[data-remove],[data-filter],[data-menu],[data-theme],[data-checkout],[data-wish],[data-open-search]");
+    const el = e.target.closest("[data-add],[data-add-detail],[data-size],[data-q],[data-cq],[data-remove],[data-filter],[data-menu],[data-theme],[data-checkout],[data-wish],[data-open-search],[data-coupon]");
     if (!el) { if (e.target.closest(".nav-links a")) $("#navLinks")?.classList.remove("open"); return; }
     const d = el.dataset;
     if (d.add) addToCart(+d.add);
@@ -378,7 +553,7 @@
     if (d.filter) setParam(d.filter, d.val);
     if (d.menu !== undefined) $("#navLinks").classList.toggle("open");
     if (d.theme !== undefined) store.set("dark", document.documentElement.classList.toggle("dark"));
-    if (d.checkout !== undefined) toast(t("orderPlaced"));
+    if (el.matches("[data-coupon]")) { checkout.coupon = $("#couponInput").value.trim(); refreshQuote(); }
     if (d.openSearch !== undefined) openSearch();
     if (d.wish) {
       const id = +d.wish; wish = wish.includes(id) ? wish.filter((x) => x !== id) : [...wish, id]; store.set("wish", wish);
@@ -386,10 +561,15 @@
     }
   });
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.id === "couponInput") { e.preventDefault(); checkout.coupon = e.target.value.trim(); refreshQuote(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openSearch(); }
     if (e.key === "Escape") closeSearch();
   });
-  document.addEventListener("change", (e) => { if (e.target.matches("[data-sort]")) setParam("sort", e.target.value); });
+  document.addEventListener("change", (e) => {
+    if (e.target.matches("[data-sort]")) setParam("sort", e.target.value);
+    if (e.target.name === "shipping") { checkout.shipping = e.target.value; refreshQuote(); }
+    if (e.target.name === "payment") checkout.payment = e.target.value;
+  });
   let st;
   document.addEventListener("input", (e) => {
     if (e.target.id === "searchInput") runSearch(e.target.value);
@@ -400,11 +580,34 @@
   });
   document.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (e.target.matches("[data-subscribe]")) { toast(t("subscribed")); e.target.reset(); }
-    if (e.target.matches("[data-contact]")) { toast(t("sent")); e.target.reset(); }
+    const f = e.target;
+    if (f.id === "checkoutForm") return placeOrder(f);
+    if (f.matches("[data-track]")) { const d = Object.fromEntries(new FormData(f)); location.hash = `#/${lang}/order/${encodeURIComponent(d.number.trim())}?email=${encodeURIComponent(d.email.trim())}`; return; }
+    if (f.matches("[data-subscribe]")) {
+      const email = f.querySelector("input").value;
+      (API.ok ? api("/api/newsletter", { body: { email } }) : Promise.resolve()).then(() => { toast(t("subscribed")); f.reset(); }).catch((err) => toast(err.message));
+    }
+    if (f.matches("[data-contact]")) {
+      const [name, email, message] = [...f.querySelectorAll(".field")].map((x) => x.value);
+      (API.ok ? api("/api/contact", { body: { name, email, message } }) : Promise.resolve()).then(() => { toast(t("sent")); f.reset(); }).catch((err) => toast(err.message));
+    }
   });
 
   window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
   if (store.get("dark", false)) document.documentElement.classList.add("dark");
-  render();
+
+  // load live prices/stock from the backend (falls back to js/data.js when opened without the server)
+  async function refreshCatalog() {
+    const list = await api("/api/products");
+    const ids = new Set(list.map((p) => p.id));
+    list.forEach((sp) => { const p = PRODUCTS.find((x) => x.id === sp.id); if (p) Object.assign(p, { price: sp.price, oldPrice: sp.oldPrice ?? undefined, stock: sp.stock }); });
+    for (let i = PRODUCTS.length - 1; i >= 0; i--) if (!ids.has(PRODUCTS[i].id)) PRODUCTS.splice(i, 1);
+    cart = cart.filter((i) => ids.has(i.id)); saveCart();
+  }
+  (async () => {
+    if (location.protocol.startsWith("http")) {
+      try { API.config = await api("/api/config"); await refreshCatalog(); API.ok = true; window.STORE.config = API.config; } catch {}
+    }
+    render();
+  })();
 })();

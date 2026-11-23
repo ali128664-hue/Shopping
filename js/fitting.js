@@ -10,6 +10,7 @@
   };
   const MODEL = "gemini-2.5-flash-image";
   // Optional local key from js/config.js (git-ignored). A key saved in the browser takes priority.
+  const serverAI = () => !!(S.config && S.config.aiEnabled);
   const getKey = () => ls.get("fr-key", "") || (window.STORE_CONFIG && window.STORE_CONFIG.GEMINI_API_KEY) || "";
 
   // category -> body slot
@@ -86,9 +87,9 @@
           ${aiImage ? `<button class="fr-back" data-fr="back">${t("frBack")}</button>` : ""}
         </div>
         ${items.length ? `<div class="fr-items">${items.map((p) => `<span class="fr-chip"><img src="${p.img}" alt="">${p[S.lang]}<button data-fr-remove="${p.id}" aria-label="Remove">×</button></span>`).join("")}</div>` : ""}
-        ${key && items.length ? `<button class="btn full fr-gen" data-fr="generate" ${busy ? "disabled" : ""}>✨ ${t("frGenerate")}</button>` : ""}
+        ${(key || serverAI()) && items.length ? `<button class="btn full fr-gen" data-fr="generate" ${busy ? "disabled" : ""}>✨ ${t("frGenerate")}</button>` : ""}
         <footer>
-          <button class="btn fr-key" data-fr="key">🔑 ${key ? t("frKeySet") : t("frKey")}</button>
+          ${serverAI() ? `<span class="fr-ready">✨ AI</span>` : `<button class="btn fr-key" data-fr="key">🔑 ${key ? t("frKeySet") : t("frKey")}</button>`}
           <button class="fr-reset" data-fr="reset">${I.refresh} ${t("frReset")}</button>
         </footer>
       </section>
@@ -144,10 +145,16 @@
   async function generate() {
     const key = getKey(); const items = wornList();
     if (!items.length) return S.toast(t("frEmpty"));
-    if (!key) return keyDialog();
+    if (!key && !serverAI()) return keyDialog();
     busy = true; render();
     try {
       const base = await svgToPng(mannequinSVG(false, "base"));
+      if (serverAI()) {
+        const r = await fetch("/api/tryon", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mannequin: base, items: items.map((p) => p.id) }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.image) throw new Error(j.error || "AI error");
+        aiImage = j.image; busy = false; return render();
+      }
       const garments = await Promise.all(items.map((p) => urlToB64(p.img)));
       const prompt = `Photorealistic fashion studio photo. Dress the plain grey store mannequin in the FIRST image with the clothing items shown in the following images (${items.map((p) => p.en).join(", ")}). Keep the mannequin's pose, full-body framing and neutral light-grey studio background. The garments must fit naturally with realistic folds, shadows and fabric texture. Do not add a real person, face or text.`;
       const body = { contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/png", data: base } }, ...garments.map((g) => ({ inline_data: { mime_type: "image/jpeg", data: g } }))] }] };

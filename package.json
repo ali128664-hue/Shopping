@@ -1,0 +1,9 @@
+{
+  "name": "ecommerce-clothes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "STORE — premium menswear e-commerce (no-dependency Node.js backend)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
