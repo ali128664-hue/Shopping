@@ -5,7 +5,7 @@ The backend is plain Node.js, so there is nothing to `npm install`.
 
 ## Run it
 
-1. Install Node.js 18 or newer from https://nodejs.org
+1. Install Node.js 18 or newer from https://nodejs.org (on Windows you can simply double-click `start-store.bat`)
 2. Copy `.env.example` to `.env` and set at least `ADMIN_PASSWORD` (and `GEMINI_API_KEY` for the AI fitting room)
 3. In this folder run:
 
