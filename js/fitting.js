@@ -9,6 +9,8 @@
     del(k) { try { localStorage.removeItem(k); } catch {} }
   };
   const MODEL = "gemini-2.5-flash-image";
+  // Optional local key from js/config.js (git-ignored). A key saved in the browser takes priority.
+  const getKey = () => ls.get("fr-key", "") || (window.STORE_CONFIG && window.STORE_CONFIG.GEMINI_API_KEY) || "";
 
   // category -> body slot
   const SLOT = { tshirts: "top", shirts: "top", hoodies: "top", jackets: "outer", pants: "bottom", shoes: "feet", hats: "head" };
@@ -71,7 +73,7 @@
   }
 
   function render() {
-    const I = S.icons, key = ls.get("fr-key", "");
+    const I = S.icons, key = getKey();
     const items = wornList();
     root.innerHTML = `
       <button class="fr-fab ${open ? "hide" : ""}" data-fr="open" aria-label="${t("frTitle")}">${I.hanger}<span>${t("frTitle")}</span>${items.length ? `<b>${items.length}</b>` : ""}</button>
@@ -140,7 +142,7 @@
   }
 
   async function generate() {
-    const key = ls.get("fr-key", ""); const items = wornList();
+    const key = getKey(); const items = wornList();
     if (!items.length) return S.toast(t("frEmpty"));
     if (!key) return keyDialog();
     busy = true; render();
