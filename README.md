@@ -1,12 +1,12 @@
 # STORE — Premium Menswear E-commerce
 
-A responsive, bilingual (English / Arabic with RTL) fashion store front-end, inspired by premium menswear storefront designs.
+A responsive, bilingual (English / Arabic with RTL) fashion store front-end, with a clean, light, card-based design.
 
 ## Features
 - Home: hero, features strip, shop-by-category, featured products, promo banner, newsletter
 - Shop: category filters, search, price sorting
 - Product page: size & quantity selection, related products
-- Cart: quantity update, remove, subtotal / free shipping over $150 (saved in localStorage)
+- Cart: quantity update, remove, subtotal / free shipping over $75 (saved in localStorage)
 - About & Contact pages
 - English ⇄ Arabic (RTL) switch, light / dark mode, mobile menu
 
