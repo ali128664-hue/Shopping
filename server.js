@@ -23,16 +23,15 @@ const HOST = process.env.HOST || "0.0.0.0"; // 0.0.0.0 = reachable from phones o
 
 // addresses other devices on the same network can use (e.g. http://192.168.1.5:3000)
 function lanUrls() {
-  const out = [];
+  const real = [], virtual = [];
   for (const [name, list] of Object.entries(os.networkInterfaces())) {
     for (const a of list || []) {
-      if (a.family !== "IPv4" && a.family !== 4) continue;
-      if (a.internal || a.address.startsWith("169.254.")) continue;
-      if (/vEthernet|VirtualBox|VMware|WSL|Hyper-V|docker|vbox|tailscale|zerotier/i.test(name)) continue;
-      out.push(`http://${a.address}:${PORT}`);
+      if (!(a.family === "IPv4" || a.family === 4) || a.internal || a.address.startsWith("169.254.")) continue;
+      // virtual adapters (WSL, VirtualBox, VPN…) are listed last
+      (/vEthernet|VirtualBox|VMware|WSL|Hyper-V|docker|vbox|tailscale|zerotier|loopback/i.test(name) ? virtual : real).push(`http://${a.address}:${PORT}`);
     }
   }
-  return out;
+  return [...real, ...virtual];
 }
 
 // ---------- store settings ----------
@@ -193,6 +192,12 @@ const usd = (o) => o.totalUSD ?? o.total; // orders before multi-currency were i
 const routes = [];
 const route = (method, pattern, handler) => routes.push({ method, re: new RegExp("^" + pattern.replace(/:(\w+)/g, "(?<$1>[^/]+)") + "$"), handler });
 
+// network details for the shop owner's own computer only (used to show the phone address)
+route("GET", "/api/local-network", (req) => {
+  const ra = req.socket.remoteAddress || "";
+  if (!/^(::1|127\.|::ffff:127\.)/.test(ra)) throw httpError(404, "Not found");
+  return { lanUrls: lanUrls(), interfaces: Object.fromEntries(Object.entries(os.networkInterfaces()).map(([n, l]) => [n, (l || []).filter((a) => a.family === "IPv4" || a.family === 4).map((a) => a.address)])) };
+});
 route("GET", "/api/config", () => ({ aiEnabled: !!GEMINI_API_KEY, bank: BANK, countries: countries.list().map(countries.publicCountry) }));
 route("GET", "/api/products", (req, p, url) => { const lang = seo.CODES.includes(url.searchParams.get("lang")) ? url.searchParams.get("lang") : "en"; return localized(lang); });
 route("POST", "/api/quote", async (req) => quote(await readBody(req)));
